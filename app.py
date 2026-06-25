@@ -1717,6 +1717,7 @@ def vista_necesidades() -> None:
             return str(value)
     except Exception:
         pass
+
     return os.getenv(name, default)
 
 

@@ -574,51 +574,51 @@ def vista_proyectos() -> None:
     sistema_codigo_options = clean_options(sistemas.get("sistema_codigo", pd.Series(dtype=str)), proyectos.get("sistema_codigo", pd.Series(dtype=str)), include_blank=True)
     cluster_options = clean_options(sistemas.get("cluster", pd.Series(dtype=str)), proyectos.get("cluster", pd.Series(dtype=str)), include_blank=True)
     dependencia_options = clean_options(
-    proyectos.get("dependencia_responsable", pd.Series(dtype=str)),
-    [
-        "Planificación",
-        "Auditoría",
-        "Jurídica",
-        "Cooperación y Asuntos Internacionales",
-        "Laboratorio Nacional de Aguas",
-        "Gestión Tarifaria",
-        "Comunicación Institucional",
-        "Asesor o apoyo Presidencia",
-        "UTSAPS",
-        "Programa Agua Potable y Saneamiento (PAPS)",
-        "Asesor o apoyo Gerencia o Subgerencia",
-        "Contraloría de Servicios",
-        "Igualdad de Género e Interculturalidad",
-        "Salud Ocupacional",
-        "UEN Investigación y Desarrollo",
-        "UEN Programación y Control",
-        "UEN Administración de Proyectos",
-        "UEN Gestión Ambiental",
-        "Asesor o Apoyo Subgerencia",
-        "Recolección y Tratamiento GAM",
-        "UEN Producción y Distribución",
-        "UEN Optimización de Sistemas",
-        "UEN Servicio al Cliente",
-        "Región Brunca",
-        "Región Central Oeste",
-        "Región Chorotega",
-        "Región Huétar Caribe",
-        "Región Pacífico Central",
-        "UEN Recolección y Tratamiento",
-        "UEN Gestión de Acueductos Rurales",
-        "Otra",
-        "Programas y proyectos",
-        "Preinversión y Construcción",
-        "Ampliación Acueducto Metropolitano",
-        "RANC-EE",
-        "Finanzas",
-        "Centro de Servicios de Apoyo",
-        "Sistemas de Información",
-        "Proveeduría",
-        "Gestión Capital Humano",
-        "Por definir",
-    ],
-)
+        proyectos.get("dependencia_responsable", pd.Series(dtype=str)),
+        [
+            "Planificación",
+            "Auditoría",
+            "Jurídica",
+            "Cooperación y Asuntos Internacionales",
+            "Laboratorio Nacional de Aguas",
+            "Gestión Tarifaria",
+            "Comunicación Institucional",
+            "Asesor o apoyo Presidencia",
+            "UTSAPS",
+            "Programa Agua Potable y Saneamiento (PAPS)",
+            "Asesor o apoyo Gerencia o Subgerencia",
+            "Contraloría de Servicios",
+            "Igualdad de Género e Interculturalidad",
+            "Salud Ocupacional",
+            "UEN Investigación y Desarrollo",
+            "UEN Programación y Control",
+            "UEN Administración de Proyectos",
+            "UEN Gestión Ambiental",
+            "Asesor o Apoyo Subgerencia",
+            "Recolección y Tratamiento GAM",
+            "UEN Producción y Distribución",
+            "UEN Optimización de Sistemas",
+            "UEN Servicio al Cliente",
+            "Región Brunca",
+            "Región Central Oeste",
+            "Región Chorotega",
+            "Región Huétar Caribe",
+            "Región Pacífico Central",
+            "UEN Recolección y Tratamiento",
+            "UEN Gestión de Acueductos Rurales",
+            "Otra",
+            "Programas y proyectos",
+            "Preinversión y Construcción",
+            "Ampliación Acueducto Metropolitano",
+            "RANC-EE",
+            "Finanzas",
+            "Centro de Servicios de Apoyo",
+            "Sistemas de Información",
+            "Proveeduría",
+            "Gestión Capital Humano",
+            "Por definir",
+        ],
+    )
     terrenos_options = clean_options(catalogo_terrenos.iloc[:, 0] if not catalogo_terrenos.empty else pd.Series(dtype=str), proyectos.get("situacion_terrenos", pd.Series(dtype=str)), include_blank=True)
     beneficios_options = clean_options(catalogo_bi.get("Beneficios", pd.Series(dtype=str)), parse_options(proyectos.get("beneficios", pd.Series(dtype=str))))
     impactos_options = clean_options(catalogo_bi.get("Impacto", pd.Series(dtype=str)), parse_options(proyectos.get("impacto", pd.Series(dtype=str))))
@@ -1562,17 +1562,33 @@ def vista_necesidades() -> None:
         c3.metric("Tipos de proyecto", necesidades.get("tipo_de_proyecto", pd.Series(dtype=str)).nunique())
         c4.metric("Sin clasificar", int(necesidades.get("responsabilidad_atencion", pd.Series(dtype=str)).astype(str).str.strip().eq("").sum()))
         g1, g2 = st.columns(2)
-        by_type = necesidades.groupby("tipo_de_proyecto", dropna=False).size().reset_index(name="cantidad").sort_values("cantidad", ascending=False)
-        by_type["tipo_de_proyecto"] = by_type["tipo_de_proyecto"].replace({"": "Sin clasificar"}).fillna("Sin clasificar")
+        by_type = (
+            necesidades
+            .groupby("tipo_de_proyecto", dropna=False)
+            .size()
+            .reset_index(name="Cantidad")
+            .rename(columns={"tipo_de_proyecto": "Categoría"})
+            .sort_values("Cantidad", ascending=False)
+        )
+        
+        by_type["Categoría"] = (
+            by_type["Categoría"]
+            .fillna("")
+            .astype(str)
+            .str.strip()
+            .replace({"": "Sin clasificar"})
+        )
+
         fig_type = px.bar(
             by_type,
             x="Cantidad",
             y="Categoría",
             orientation="h",
-            color="tipo_de_proyecto",
-            text="cantidad",
+            color="Categoría",
+            text="Cantidad",
             title="Cantidad de necesidades por tipo de proyecto",
         )
+
         g1.plotly_chart(add_count_labels(fig_type, "h"), use_container_width=True)
         by_resp = necesidades.groupby("responsabilidad_atencion", dropna=False).size().reset_index(name="cantidad").sort_values("cantidad", ascending=False)
         by_resp["responsabilidad_atencion"] = by_resp["responsabilidad_atencion"].replace({"": "Sin clasificar"}).fillna("Sin clasificar")

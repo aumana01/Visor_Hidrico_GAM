@@ -85,7 +85,7 @@ NECESIDAD_VISIBLE_COLS = [
 NECESIDAD_LABELS = {
     "objetivo_de_la_iniciativa": "Objetivo de la iniciativa",
     "breve_descripcion": "Breve descripción",
-    "tipo_de_proyecto": "Tipo de proyecto",
+    "tipo_de_proyecto": "tipo_de_proyecto",
     "codigo_de_sistema": "Código de Sistema",
     "sistema_de_abastecimiento": "Sistema de Abastecimiento",
     "principal_reto_por_superar": "Principal reto por superar",

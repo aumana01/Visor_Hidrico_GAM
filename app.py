@@ -150,8 +150,9 @@ def title() -> None:
     st.markdown(
         """
         <div class="aya-title">
+            <h1>UEN Optimización de Sistemas GAM</h1>
             <h1>Gestión de proyectos, capacidad hídrica y necesidades GAM</h1>
-            <p>Herramienta Streamlit + Supabase para análisis ejecutivo, edición y trazabilidad institucional.</p>
+            <p>Herramienta para análisis ejecutivo, edición y trazabilidad institucional de proyectos PRAGAM e Iniciativas.</p>
         </div>
         """,
         unsafe_allow_html=True,
@@ -572,7 +573,52 @@ def vista_proyectos() -> None:
     sistema_options = clean_options(sistemas.get("sistema_nombre", pd.Series(dtype=str)), proyectos.get("sistema_nombre", pd.Series(dtype=str)), include_blank=True)
     sistema_codigo_options = clean_options(sistemas.get("sistema_codigo", pd.Series(dtype=str)), proyectos.get("sistema_codigo", pd.Series(dtype=str)), include_blank=True)
     cluster_options = clean_options(sistemas.get("cluster", pd.Series(dtype=str)), proyectos.get("cluster", pd.Series(dtype=str)), include_blank=True)
-    dependencia_options = clean_options(proyectos.get("dependencia_responsable", pd.Series(dtype=str)), ["UEN OS", "SAID", "UEN Producción", "UEN Distribución", "Dirección GAM", "Por definir"])
+    dependencia_options = clean_options(
+    proyectos.get("dependencia_responsable", pd.Series(dtype=str)),
+    [
+        "Planificación",
+        "Auditoría",
+        "Jurídica",
+        "Cooperación y Asuntos Internacionales",
+        "Laboratorio Nacional de Aguas",
+        "Gestión Tarifaria",
+        "Comunicación Institucional",
+        "Asesor o apoyo Presidencia",
+        "UTSAPS",
+        "Programa Agua Potable y Saneamiento (PAPS)",
+        "Asesor o apoyo Gerencia o Subgerencia",
+        "Contraloría de Servicios",
+        "Igualdad de Género e Interculturalidad",
+        "Salud Ocupacional",
+        "UEN Investigación y Desarrollo",
+        "UEN Programación y Control",
+        "UEN Administración de Proyectos",
+        "UEN Gestión Ambiental",
+        "Asesor o Apoyo Subgerencia",
+        "Recolección y Tratamiento GAM",
+        "UEN Producción y Distribución",
+        "UEN Optimización de Sistemas",
+        "UEN Servicio al Cliente",
+        "Región Brunca",
+        "Región Central Oeste",
+        "Región Chorotega",
+        "Región Huétar Caribe",
+        "Región Pacífico Central",
+        "UEN Recolección y Tratamiento",
+        "UEN Gestión de Acueductos Rurales",
+        "Otra",
+        "Programas y proyectos",
+        "Preinversión y Construcción",
+        "Ampliación Acueducto Metropolitano",
+        "RANC-EE",
+        "Finanzas",
+        "Centro de Servicios de Apoyo",
+        "Sistemas de Información",
+        "Proveeduría",
+        "Gestión Capital Humano",
+        "Por definir",
+    ],
+)
     terrenos_options = clean_options(catalogo_terrenos.iloc[:, 0] if not catalogo_terrenos.empty else pd.Series(dtype=str), proyectos.get("situacion_terrenos", pd.Series(dtype=str)), include_blank=True)
     beneficios_options = clean_options(catalogo_bi.get("Beneficios", pd.Series(dtype=str)), parse_options(proyectos.get("beneficios", pd.Series(dtype=str))))
     impactos_options = clean_options(catalogo_bi.get("Impacto", pd.Series(dtype=str)), parse_options(proyectos.get("impacto", pd.Series(dtype=str))))
@@ -804,7 +850,7 @@ def vista_proyectos() -> None:
         st.markdown("#### Ubicación de proyectos")
         st.caption(
             "Mapa referencial con los proyectos que cuentan con latitud y longitud válidas. "
-            "Si una longitud viene positiva como 84.x, la app la interpreta automáticamente como -84.x para Costa Rica."
+            "Ubicación estimada y centroidal de los proyectos."
         )
         map_df = proyectos.copy()
         map_df["lat"] = map_df.get("latitud", pd.Series(dtype=object)).apply(lambda v: parse_coordinate(v, "lat"))
@@ -1385,7 +1431,7 @@ def vista_capacidad() -> None:
         fig_gap.update_layout(xaxis_tickangle=-25)
         c_gap.plotly_chart(add_bar_labels(fig_gap, "v"), use_container_width=True)
 
-        st.markdown("##### Tabla ejecutiva para conversación gerencial")
+        st.markdown("##### Tabla Resumen por Clúster en sistemas más representativos")
         visible_exec_table = exec_table.drop(columns=["Sistemas asociados"], errors="ignore")
         st.dataframe(
             style_executive_table(visible_exec_table),
@@ -1520,8 +1566,8 @@ def vista_necesidades() -> None:
         by_type["tipo_de_proyecto"] = by_type["tipo_de_proyecto"].replace({"": "Sin clasificar"}).fillna("Sin clasificar")
         fig_type = px.bar(
             by_type,
-            x="cantidad",
-            y="tipo_de_proyecto",
+            x="Cantidad",
+            y="Categoría",
             orientation="h",
             color="tipo_de_proyecto",
             text="cantidad",

@@ -14,6 +14,7 @@ except Exception:  # pragma: no cover - Supabase is optional for local demo mode
     Client = None
     create_client = None
 
+
 BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = BASE_DIR / "data"
 LOCAL_DIR = DATA_DIR / "_local_runtime"
@@ -42,6 +43,7 @@ def _get_secret(name: str, default: str | None = None) -> str | None:
             return str(value)
     except Exception:
         pass
+
     return os.getenv(name, default)
 
 
@@ -50,8 +52,10 @@ def get_supabase_client() -> Client | None:
     """Return a Supabase client when credentials exist; otherwise use local CSV mode."""
     url = _get_secret("SUPABASE_URL")
     key = _get_secret("SUPABASE_KEY") or _get_secret("SUPABASE_ANON_KEY")
+
     if not url or not key or create_client is None:
         return None
+
     try:
         return create_client(url, key)
     except Exception as exc:
@@ -74,15 +78,19 @@ def _seed_file(table: str) -> Path:
 def _read_csv(table: str) -> pd.DataFrame:
     runtime = _runtime_file(table)
     source = runtime if runtime.exists() else _seed_file(table)
+
     if not source.exists():
         return pd.DataFrame()
+
     return pd.read_csv(source, dtype=str, keep_default_na=False)
 
 
 def _coerce_known_types(table: str, df: pd.DataFrame) -> pd.DataFrame:
     if df.empty:
         return df
+
     out = df.copy()
+
     numeric_cols = {
         "id",
         "latitud",
@@ -97,13 +105,20 @@ def _coerce_known_types(table: str, df: pd.DataFrame) -> pd.DataFrame:
         "volumen_estimado_m3",
         "km_estimado",
     }
+
     bool_cols = {"activo_en_capacidad", "activo"}
+
     for col in numeric_cols.intersection(out.columns):
         out[col] = pd.to_numeric(out[col], errors="coerce")
+
         if col in {"id", "anio", "anio_efecto"}:
             out[col] = out[col].astype("Int64")
+
     for col in bool_cols.intersection(out.columns):
-        out[col] = out[col].map(lambda x: str(x).strip().lower() in {"true", "1", "sí", "si", "yes", "y", "x"})
+        out[col] = out[col].map(
+            lambda x: str(x).strip().lower() in {"true", "1", "sí", "si", "yes", "y", "x"}
+        )
+
     return out
 
 
@@ -111,6 +126,7 @@ def _coerce_known_types(table: str, df: pd.DataFrame) -> pd.DataFrame:
 def read_table(table: str) -> pd.DataFrame:
     """Read a full table from Supabase or local CSV fallback."""
     client = get_supabase_client()
+
     if client is None:
         return _coerce_known_types(table, _read_csv(table))
 
@@ -118,31 +134,41 @@ def read_table(table: str) -> pd.DataFrame:
         response = client.table(table).select("*").execute()
         data = response.data or []
         return _coerce_known_types(table, pd.DataFrame(data))
+
     except Exception as exc:
         st.error(f"Error leyendo la tabla '{table}' en Supabase: {exc}")
         return _coerce_known_types(table, _read_csv(table))
 
 
 def _clean_value(value: Any) -> Any:
-    if isinstance(value, (pd.Timestamp,)):
+    if isinstance(value, pd.Timestamp):
         return value.isoformat()
+
     if isinstance(value, np.generic):
         value = value.item()
+
     if pd.isna(value):
         return None
+
     return value
 
 
 def _records_for_supabase(df: pd.DataFrame) -> list[dict[str, Any]]:
     clean = df.copy()
     clean = clean.replace({np.nan: None})
+
     records: list[dict[str, Any]] = []
+
     for record in clean.to_dict(orient="records"):
         new_record = {key: _clean_value(value) for key, value in record.items()}
-        # Avoid sending empty identity fields to Supabase.
+
+        # Evita enviar IDs vacíos. Si _assign_missing_ids ya asignó un ID,
+        # este bloque no lo elimina.
         if "id" in new_record and new_record["id"] in {None, "", 0}:
             new_record.pop("id", None)
+
         records.append(new_record)
+
     return records
 
 
@@ -154,69 +180,191 @@ def reset_local_runtime(tables: Iterable[str] | None = None) -> list[str]:
     """Delete local runtime CSV files so the app falls back to seed data."""
     targets = set(tables or TABLE_FILES.keys())
     deleted: list[str] = []
+
     for table in targets:
         path = _runtime_file(table)
+
         if path.exists():
             path.unlink()
             deleted.append(table)
+
     clear_cache()
     return deleted
 
 
+def _next_id_from_supabase(client: Client, table: str) -> int:
+    """
+    Obtiene el siguiente ID disponible desde Supabase.
+
+    Esto evita depender de una secuencia desfasada cuando se cargaron datos base
+    con IDs explícitos.
+    """
+    try:
+        response = (
+            client
+            .table(table)
+            .select("id")
+            .order("id", desc=True)
+            .limit(1)
+            .execute()
+        )
+
+        data = response.data or []
+
+        if not data:
+            return 1
+
+        max_id = pd.to_numeric(data[0].get("id"), errors="coerce")
+
+        if pd.isna(max_id):
+            return 1
+
+        return int(max_id) + 1
+
+    except Exception:
+        return 1
+
+
+def _next_id_from_local_csv(table: str) -> int:
+    """Obtiene el siguiente ID disponible desde el CSV local."""
+    current = _coerce_known_types(table, _read_csv(table))
+
+    if current.empty or "id" not in current.columns:
+        return 1
+
+    ids = pd.to_numeric(current["id"], errors="coerce")
+    max_id = ids.max()
+
+    if pd.isna(max_id):
+        return 1
+
+    return int(max_id) + 1
+
+
+def _assign_missing_ids(table: str, df: pd.DataFrame, client: Client | None = None) -> pd.DataFrame:
+    """
+    Asigna IDs nuevos a registros sin ID.
+
+    Aplica solo para tablas con ID propio:
+    - proyectos
+    - necesidades
+
+    Corrige el problema en el que una nueva necesidad puede reemplazar el ID 1
+    si la secuencia de Supabase quedó desfasada.
+    """
+    out = df.copy()
+
+    if table not in ID_TABLES:
+        return out
+
+    if "id" not in out.columns:
+        out.insert(0, "id", pd.NA)
+
+    if client is not None:
+        next_id = _next_id_from_supabase(client, table)
+    else:
+        next_id = _next_id_from_local_csv(table)
+
+    incoming_ids = pd.to_numeric(out["id"], errors="coerce")
+    max_incoming = incoming_ids.max()
+
+    if pd.notna(max_incoming):
+        next_id = max(next_id, int(max_incoming) + 1)
+
+    for idx in out.index:
+        raw_id = out.at[idx, "id"]
+
+        is_missing = (
+            pd.isna(raw_id)
+            or str(raw_id).strip() in {"", "0", "<NA>", "nan", "NaN", "None", "none"}
+        )
+
+        if is_missing:
+            out.at[idx, "id"] = next_id
+            next_id += 1
+
+    out["id"] = pd.to_numeric(out["id"], errors="coerce").astype("Int64")
+
+    return out
+
+
 def upsert_rows(table: str, df: pd.DataFrame) -> None:
-    """Insert/update rows. In local mode the table is rewritten into _local_runtime."""
+    """
+    Insert/update rows.
+
+    En Supabase:
+    - Si el registro trae ID, actualiza ese ID.
+    - Si el registro no trae ID, se le asigna explícitamente el siguiente ID disponible.
+
+    En modo local:
+    - Se reescribe el CSV local en data/_local_runtime.
+    """
     if df.empty:
         return
+
     df = df.copy()
     client = get_supabase_client()
+
     if client is not None:
+        df = _assign_missing_ids(table, df, client)
         records = _records_for_supabase(df)
+
         if records:
             client.table(table).upsert(records).execute()
+
         clear_cache()
         return
 
     current = _coerce_known_types(table, _read_csv(table))
+
     if table in ID_TABLES:
-        if "id" not in df.columns:
-            df.insert(0, "id", pd.NA)
-        max_id = int(pd.to_numeric(current.get("id", pd.Series(dtype=float)), errors="coerce").max() or 0)
-        for idx in df.index:
-            if pd.isna(df.at[idx, "id"]) or str(df.at[idx, "id"]).strip() in {"", "0"}:
-                max_id += 1
-                df.at[idx, "id"] = max_id
+        df = _assign_missing_ids(table, df, client=None)
+
     if not current.empty and "id" in current.columns and "id" in df.columns:
         current = current[~current["id"].astype(str).isin(df["id"].astype(str))]
         combined = pd.concat([current, df], ignore_index=True)
     else:
         combined = pd.concat([current, df], ignore_index=True) if not current.empty else df
+
     combined.to_csv(_runtime_file(table), index=False, encoding="utf-8-sig")
     clear_cache()
 
 
 def delete_rows(table: str, ids: Iterable[Any]) -> None:
     ids_list = [int(x) for x in ids if str(x).strip()]
+
     if not ids_list:
         return
+
     client = get_supabase_client()
+
     if client is not None:
         client.table(table).delete().in_("id", ids_list).execute()
         clear_cache()
         return
+
     current = _coerce_known_types(table, _read_csv(table))
+
     if "id" in current.columns:
         current = current[~current["id"].astype(int).isin(ids_list)]
         current.to_csv(_runtime_file(table), index=False, encoding="utf-8-sig")
+
     clear_cache()
 
 
 def seed_supabase(overwrite: bool = False) -> dict[str, int]:
-    """Load CSV seed data into Supabase. Use overwrite=True only for controlled resets."""
+    """
+    Load CSV seed data into Supabase.
+
+    Use overwrite=True only for controlled resets.
+    """
     client = get_supabase_client()
+
     if client is None:
         raise RuntimeError("Supabase no está configurado.")
 
     inserted: dict[str, int] = {}
+
     ordered_tables = [
         "sistemas_clusters",
         "capacidad_base",
@@ -228,16 +376,26 @@ def seed_supabase(overwrite: bool = False) -> dict[str, int]:
         "proyectos",
         "necesidades",
     ]
+
     for table in ordered_tables:
         df = _coerce_known_types(table, _read_csv(table))
+
         if df.empty:
             inserted[table] = 0
             continue
+
         if overwrite:
-            client.table(table).delete().neq("id", -1).execute() if "id" in df.columns else client.table(table).delete().neq(list(df.columns)[0], "__never__").execute()
+            if "id" in df.columns:
+                client.table(table).delete().neq("id", -1).execute()
+            else:
+                client.table(table).delete().neq(list(df.columns)[0], "__never__").execute()
+
         records = _records_for_supabase(df)
+
         for start in range(0, len(records), 500):
             client.table(table).upsert(records[start:start + 500]).execute()
+
         inserted[table] = len(records)
+
     clear_cache()
     return inserted

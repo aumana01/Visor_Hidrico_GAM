@@ -66,7 +66,7 @@ ESTADO_INICIATIVA_OPTIONS = [
     "Por definir",
 ]
 ESTUDIO_OPTIONS = ["Sí", "No", "En proceso", "Adquirido", "Adquiridos", "No aplica", "Por definir"]
-ATENCION_NECESIDAD_OPTIONS = ["", "Lo puede atender el GAM", "Se requiere apoyo de otras dependencias"]
+ATENCION_NECESIDAD_OPTIONS = ["", "Lo puede atender el GAM", "Se requiere apoyo de otras dependencias","Ambos"]
 
 NECESIDAD_VISIBLE_COLS = [
     "objetivo_de_la_iniciativa",

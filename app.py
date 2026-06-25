@@ -9,6 +9,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Iterable
 
+import fitz
 import pandas as pd
 import plotly.express as px
 import streamlit as st
@@ -1896,9 +1897,9 @@ def render_supabase_pdf(path: str, height: int = 780) -> None:
     """
     Visualizador PDF desde Supabase Storage.
 
-    Para mayor compatibilidad con Streamlit Cloud, se descarga el PDF como bytes
-    desde Supabase y se incrusta como base64, en lugar de usar directamente
-    la URL firmada dentro de un iframe.
+    En lugar de incrustar el PDF con iframe/object, se descarga desde Supabase
+    y se renderiza cada página como imagen. Esto evita bloqueos del navegador
+    dentro de Streamlit Cloud.
     """
     try:
         pdf_bytes = download_pdf_from_supabase(path)
@@ -1907,65 +1908,64 @@ def render_supabase_pdf(path: str, height: int = 780) -> None:
             st.warning("El PDF se descargó vacío desde Supabase.")
             return
 
-        b64_pdf = base64.b64encode(pdf_bytes).decode("utf-8")
         signed_url = signed_pdf_url(path)
 
-        html_code = f"""
-        <div style="font-family: Arial, sans-serif;">
+        if signed_url:
+            st.link_button(
+                "Abrir PDF en nueva pestaña",
+                signed_url,
+                use_container_width=False,
+            )
 
-            <div style="margin-bottom: 10px;">
-                <a
-                    href="{signed_url}"
-                    target="_blank"
-                    style="
-                        display:inline-block;
-                        padding:8px 12px;
-                        background:#002B5C;
-                        color:white;
-                        text-decoration:none;
-                        border-radius:6px;
-                        font-size:13px;
-                        font-weight:600;
-                    "
-                >
-                    Abrir PDF en nueva pestaña
-                </a>
-            </div>
+        doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+        total_pages = doc.page_count
 
-            <object
-                data="data:application/pdf;base64,{b64_pdf}"
-                type="application/pdf"
-                width="100%"
-                height="{height}px"
-                style="border:1px solid #D0D7E2; border-radius:8px;"
-            >
-                <embed
-                    src="data:application/pdf;base64,{b64_pdf}"
-                    type="application/pdf"
-                    width="100%"
-                    height="{height}px"
-                    style="border:1px solid #D0D7E2; border-radius:8px;"
-                />
+        if total_pages <= 0:
+            st.warning("El archivo PDF no contiene páginas visibles.")
+            doc.close()
+            return
 
-                <div style="
-                    padding:16px;
-                    background:#F5F7FA;
-                    border:1px solid #D0D7E2;
-                    border-radius:8px;
-                    color:#1F2937;
-                ">
-                    <p>
-                        El navegador no permitió visualizar el PDF embebido.
-                        Use el botón superior para abrirlo en una nueva pestaña
-                        o descárguelo desde el panel izquierdo.
-                    </p>
-                </div>
-            </object>
+        st.caption(
+            f"Visualización renderizada como imagen · {total_pages} página(s). "
+            "Para texto seleccionable, use abrir en nueva pestaña o descargar."
+        )
 
-        </div>
-        """
+        col_a, col_b = st.columns([1, 3])
 
-        components.html(html_code, height=height + 90, scrolling=True)
+        with col_a:
+            page_number = st.number_input(
+                "Página",
+                min_value=1,
+                max_value=total_pages,
+                value=1,
+                step=1,
+                key=f"pdf_page_{path}",
+            )
+
+        with col_b:
+            zoom = st.slider(
+                "Zoom de visualización",
+                min_value=1.0,
+                max_value=2.5,
+                value=1.6,
+                step=0.1,
+                key=f"pdf_zoom_{path}",
+            )
+
+        page = doc.load_page(int(page_number) - 1)
+
+        matrix = fitz.Matrix(float(zoom), float(zoom))
+        pix = page.get_pixmap(matrix=matrix, alpha=False)
+
+        image_bytes = pix.tobytes("png")
+
+        st.image(
+            image_bytes,
+            caption=f"Página {page_number} de {total_pages}",
+            use_container_width=True,
+        )
+
+        doc.close()
 
     except Exception as exc:
         st.error(f"No se pudo visualizar el PDF desde Supabase: {exc}")

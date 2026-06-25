@@ -3,7 +3,9 @@ from __future__ import annotations
 import base64
 import html
 import math
+import os
 import re
+from datetime import datetime
 from pathlib import Path
 from typing import Iterable
 
@@ -11,12 +13,15 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 import streamlit.components.v1 as components
+from supabase import create_client
 
 from database import delete_rows, is_supabase_enabled, read_table, reset_local_runtime, seed_supabase, upsert_rows
 
 AYA_AZUL = "#002B5C"
 AYA_DORADO = "#C9A227"
 AYA_GRIS = "#F5F7FA"
+PDF_BUCKET = "lecciones-aprendidas"
+PDF_FOLDER = "pdfs"
 YEARS = list(range(2024, 2041))
 ANALYSIS_YEARS = list(range(2025, 2041))
 
@@ -1704,120 +1709,345 @@ def vista_necesidades() -> None:
 
 
 
-
-def list_pdf_files() -> list[Path]:
-    base_dir = Path(__file__).resolve().parent
-    folders = [
-        base_dir / "data" / "lecciones_aprendidas",
-        base_dir / "data" / "_local_runtime" / "lecciones_aprendidas",
-    ]
-    files: list[Path] = []
-    for folder in folders:
-        folder.mkdir(parents=True, exist_ok=True)
-        files.extend(sorted(folder.glob("*.pdf")))
-    seen = set()
-    unique = []
-    for file in files:
-        key = str(file.resolve())
-        if key not in seen:
-            seen.add(key)
-            unique.append(file)
-    return unique
-
-
-def render_pdf(path: Path, height: int = 760) -> None:
-    '''Reliable PDF preview for local Streamlit.'''
+    def get_secret_or_env(name: str, default: str = "") -> str:
+    """Lee secretos desde Streamlit Cloud o variables de entorno locales."""
     try:
-        import fitz  # PyMuPDF
+        value = st.secrets.get(name, "")
+        if value:
+            return str(value)
+    except Exception:
+        pass
+    return os.getenv(name, default)
 
-        doc = fitz.open(str(path))
-        total_pages = len(doc)
-        if total_pages == 0:
-            st.warning("El PDF no contiene páginas para visualizar.")
-            return
-        c1, c2, c3 = st.columns([1, 1, 2])
-        page_start = c1.number_input("Página inicial", min_value=1, max_value=total_pages, value=1, step=1, key=f"pdf_start_{path.name}")
-        max_pages = c2.number_input("Páginas a mostrar", min_value=1, max_value=min(10, total_pages), value=min(3, total_pages), step=1, key=f"pdf_pages_{path.name}")
-        zoom = c3.slider("Zoom de visualización", min_value=1.0, max_value=2.5, value=1.45, step=0.05, key=f"pdf_zoom_{path.name}")
-        end_page = min(total_pages, int(page_start) + int(max_pages) - 1)
-        for page_number in range(int(page_start) - 1, end_page):
-            page = doc.load_page(page_number)
-            pix = page.get_pixmap(matrix=fitz.Matrix(float(zoom), float(zoom)), alpha=False)
-            st.image(pix.tobytes("png"), caption=f"Página {page_number + 1} de {total_pages}", use_container_width=True)
-        doc.close()
+
+@st.cache_resource(show_spinner=False)
+def supabase_storage_client():
+    """
+    Cliente Supabase para Storage.
+
+    Usa SUPABASE_SERVICE_ROLE_KEY si existe.
+    Si no existe, usa SUPABASE_KEY, pero en ese caso el bucket debe tener políticas
+    que permitan administrar objetos con la llave anon.
+    """
+    url = get_secret_or_env("SUPABASE_URL")
+    key = get_secret_or_env("SUPABASE_SERVICE_ROLE_KEY") or get_secret_or_env("SUPABASE_KEY")
+
+    if not url or not key:
+        raise RuntimeError(
+            "No se encontraron SUPABASE_URL ni SUPABASE_SERVICE_ROLE_KEY/SUPABASE_KEY "
+            "en los secrets de Streamlit."
+        )
+
+    return create_client(url, key)
+
+
+def safe_filename(name: str) -> str:
+    """Limpia nombres de archivo para evitar caracteres problemáticos en Supabase Storage."""
+    name = re.sub(r"[^A-Za-z0-9_. -]", "_", str(name)).strip()
+    if not name.lower().endswith(".pdf"):
+        name += ".pdf"
+    return name or "leccion_aprendida.pdf"
+
+
+def storage_pdf_path(filename: str) -> str:
+    """
+    Genera una ruta única dentro del bucket.
+    Ejemplo:
+    pdfs/20260625_195500_analisis_ofertas.pdf
+    """
+    safe_name = safe_filename(filename)
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    return f"{PDF_FOLDER}/{stamp}_{safe_name}"
+
+
+def list_supabase_pdfs() -> list[dict]:
+    """
+    Lista PDFs almacenados en Supabase Storage.
+
+    Retorna:
+    [
+        {
+            "name": nombre visible,
+            "path": ruta dentro del bucket,
+            "size": tamaño,
+            "updated_at": fecha
+        }
+    ]
+    """
+    client = supabase_storage_client()
+
+    try:
+        files = client.storage.from_(PDF_BUCKET).list(
+            PDF_FOLDER,
+            {
+                "limit": 1000,
+                "offset": 0,
+                "sortBy": {"column": "name", "order": "asc"},
+            },
+        )
     except Exception as exc:
-        st.warning(f"No se pudo renderizar el PDF como imagen ({exc}). Se intenta visualización embebida.")
-        try:
-            data = path.read_bytes()
-            b64 = base64.b64encode(data).decode("utf-8")
-            html_code = f'''
-            <object data="data:application/pdf;base64,{b64}" type="application/pdf" width="100%" height="{height}px">
-                <embed src="data:application/pdf;base64,{b64}" type="application/pdf" width="100%" height="{height}px" />
-                <p>El navegador no permitió visualizar el PDF embebido. Use el botón de descarga.</p>
-            </object>
-            '''
-            components.html(html_code, height=height + 30, scrolling=True)
-        except Exception as exc2:
-            st.error(f"No se pudo visualizar el PDF: {exc2}")
+        st.error(
+            "No se pudo listar el bucket de PDFs. Verifique que exista el bucket "
+            f"`{PDF_BUCKET}` en Supabase Storage. Detalle: {exc}"
+        )
+        return []
+
+    out: list[dict] = []
+
+    for item in files or []:
+        name = item.get("name", "")
+        if not name.lower().endswith(".pdf"):
+            continue
+
+        metadata = item.get("metadata") or {}
+
+        out.append(
+            {
+                "name": name,
+                "path": f"{PDF_FOLDER}/{name}",
+                "size": metadata.get("size"),
+                "updated_at": item.get("updated_at") or item.get("created_at") or "",
+            }
+        )
+
+    return out
+
+
+def upload_pdf_to_supabase(uploaded_file) -> None:
+    """Sube un PDF a Supabase Storage."""
+    client = supabase_storage_client()
+    path = storage_pdf_path(uploaded_file.name)
+    data = uploaded_file.getvalue()
+
+    try:
+        client.storage.from_(PDF_BUCKET).upload(
+            path,
+            data,
+            file_options={
+                "content-type": "application/pdf",
+                "upsert": "false",
+            },
+        )
+    except TypeError:
+        # Compatibilidad con algunas versiones de supabase-py.
+        client.storage.from_(PDF_BUCKET).upload(
+            path,
+            data,
+            file_options={
+                "contentType": "application/pdf",
+                "upsert": "false",
+            },
+        )
+
+
+def delete_pdf_from_supabase(path: str) -> None:
+    """Elimina un PDF desde Supabase Storage."""
+    client = supabase_storage_client()
+    client.storage.from_(PDF_BUCKET).remove([path])
+
+
+def download_pdf_from_supabase(path: str) -> bytes:
+    """Descarga bytes del PDF desde Supabase Storage."""
+    client = supabase_storage_client()
+    data = client.storage.from_(PDF_BUCKET).download(path)
+
+    if isinstance(data, bytes):
+        return data
+
+    if hasattr(data, "read"):
+        return data.read()
+
+    return bytes(data)
+
+
+def signed_pdf_url(path: str, expires_in: int = 3600) -> str:
+    """
+    Genera URL temporal para visualizar PDF.
+    Funciona con bucket privado.
+    """
+    client = supabase_storage_client()
+    result = client.storage.from_(PDF_BUCKET).create_signed_url(path, expires_in)
+
+    if isinstance(result, dict):
+        return (
+            result.get("signedURL")
+            or result.get("signedUrl")
+            or result.get("signed_url")
+            or ""
+        )
+
+    return ""
+
+
+def render_supabase_pdf(path: str, height: int = 780) -> None:
+    """
+    Visualizador PDF desde Supabase Storage.
+
+    Usa una URL firmada para que funcione aunque el bucket sea privado.
+    """
+    url = signed_pdf_url(path)
+
+    if not url:
+        st.warning("No se pudo generar URL temporal para visualizar el PDF.")
+        return
+
+    html_code = f"""
+    <div style="font-family: Arial, sans-serif;">
+        <div style="margin-bottom: 10px;">
+            <a
+                href="{url}"
+                target="_blank"
+                style="
+                    display:inline-block;
+                    padding:8px 12px;
+                    background:#002B5C;
+                    color:white;
+                    text-decoration:none;
+                    border-radius:6px;
+                    font-size:13px;
+                "
+            >
+                Abrir PDF en nueva pestaña
+            </a>
+        </div>
+
+        <iframe
+            src="{url}"
+            width="100%"
+            height="{height}"
+            style="border:1px solid #D0D7E2; border-radius:8px;"
+        ></iframe>
+    </div>
+    """
+
+    components.html(html_code, height=height + 80, scrolling=True)
+
+
+def format_file_size(size: object) -> str:
+    try:
+        size = float(size)
+    except Exception:
+        return "—"
+
+    if size < 1024:
+        return f"{size:.0f} B"
+    if size < 1024**2:
+        return f"{size / 1024:.1f} KB"
+    return f"{size / 1024**2:.1f} MB"
 
 
 def vista_lecciones() -> None:
     st.subheader("Vista 4 · Lecciones aprendidas y experiencias realizadas")
     st.caption(
-        "Repositorio simple de archivos PDF para documentar experiencias, estudios, informes, lecciones aprendidas o casos de referencia. "
-        "Los PDF ubicados en data/lecciones_aprendidas se listan automáticamente; también puede cargar PDFs desde la interfaz."
+        "Repositorio institucional de PDFs almacenado en Supabase Storage. "
+        "Desde esta vista se pueden cargar, visualizar, descargar y eliminar archivos."
     )
 
-    runtime_dir = Path(__file__).resolve().parent / "data" / "_local_runtime" / "lecciones_aprendidas"
-    runtime_dir.mkdir(parents=True, exist_ok=True)
-    uploaded = st.file_uploader("Cargar PDF de lección aprendida", type=["pdf"], accept_multiple_files=True, key="pdf_lecciones")
-    if uploaded:
-        loaded = 0
-        for file in uploaded:
-            safe_name = re.sub(r"[^A-Za-z0-9_. -]", "_", file.name).strip() or "leccion.pdf"
-            target = runtime_dir / safe_name
-            target.write_bytes(file.getbuffer())
-            loaded += 1
-        st.success(f"Se cargaron {loaded} PDF en el repositorio local de la app.")
+    if not is_supabase_enabled():
+        st.warning(
+            "La administración de PDFs en Supabase requiere que la app esté conectada a Supabase. "
+            "Revise los secrets SUPABASE_URL y SUPABASE_KEY."
+        )
+        return
 
-    files = list_pdf_files()
+    with st.expander("Cargar nuevos PDFs", expanded=True):
+        uploaded_files = st.file_uploader(
+            "Seleccione uno o varios PDFs",
+            type=["pdf"],
+            accept_multiple_files=True,
+            key="pdf_upload_supabase",
+        )
+
+        if uploaded_files:
+            if st.button("Subir PDFs a Supabase", type="primary", use_container_width=True):
+                ok = 0
+                errors = []
+
+                for uploaded_file in uploaded_files:
+                    try:
+                        upload_pdf_to_supabase(uploaded_file)
+                        ok += 1
+                    except Exception as exc:
+                        errors.append(f"{uploaded_file.name}: {exc}")
+
+                if ok:
+                    st.success(f"Se cargaron {ok} PDF en Supabase Storage.")
+
+                if errors:
+                    st.error("Algunos archivos no pudieron cargarse:")
+                    for err in errors:
+                        st.write(f"- {err}")
+
+                st.rerun()
+
+    files = list_supabase_pdfs()
+
     if not files:
-        st.info("No hay archivos PDF cargados. Agregue archivos en data/lecciones_aprendidas o súbalos desde esta vista.")
+        st.info("No hay PDFs almacenados en Supabase Storage.")
         return
 
     col_list, col_view = st.columns([1, 2])
+
     with col_list:
-        st.markdown("#### Archivos PDF")
-        labels = [file.name for file in files]
-        selected_name = st.radio("Seleccione un archivo", labels, label_visibility="collapsed", key="pdf_selected_radio")
-        selected_file = files[labels.index(selected_name)]
-        st.download_button(
-            "Descargar PDF seleccionado",
-            data=selected_file.read_bytes(),
-            file_name=selected_file.name,
-            mime="application/pdf",
-            use_container_width=True,
+        st.markdown("#### Archivos PDF en Supabase")
+
+        selected = st.selectbox(
+            "Seleccione un PDF",
+            files,
+            format_func=lambda x: x["name"],
+            label_visibility="collapsed",
+            key="selected_pdf_supabase",
         )
+
+        if selected is None:
+            st.info("Seleccione un PDF.")
+            return
+
+        st.write(f"**Archivo:** {selected['name']}")
+        st.caption(f"Ruta Supabase: `{selected['path']}`")
+        st.caption(f"Tamaño: {format_file_size(selected.get('size'))}")
+
+        try:
+            pdf_bytes = download_pdf_from_supabase(selected["path"])
+            st.download_button(
+                "Descargar PDF seleccionado",
+                data=pdf_bytes,
+                file_name=selected["name"],
+                mime="application/pdf",
+                use_container_width=True,
+            )
+        except Exception as exc:
+            st.warning(f"No se pudo preparar la descarga: {exc}")
+
         st.divider()
+
         st.markdown("##### Eliminar PDF")
-        confirm_delete = st.checkbox("Confirmo que deseo borrar el PDF seleccionado", key="confirm_delete_pdf")
-        if st.button("Borrar PDF seleccionado", type="secondary", disabled=not confirm_delete, use_container_width=True):
+
+        confirm_delete = st.checkbox(
+            "Confirmo que deseo eliminar este PDF de Supabase",
+            key=f"confirm_delete_supabase_{selected['path']}",
+        )
+
+        if st.button(
+            "Eliminar PDF seleccionado",
+            type="secondary",
+            disabled=not confirm_delete,
+            use_container_width=True,
+            key=f"delete_pdf_supabase_{selected['path']}",
+        ):
             try:
-                selected_file.unlink()
-                st.success(f"PDF eliminado: {selected_file.name}")
+                delete_pdf_from_supabase(selected["path"])
+                st.success("PDF eliminado correctamente de Supabase.")
                 st.rerun()
             except Exception as exc:
                 st.error(f"No se pudo eliminar el PDF: {exc}")
-        try:
-            relative = selected_file.relative_to(Path(__file__).resolve().parent)
-        except Exception:
-            relative = selected_file
-        st.caption(f"Ruta: {relative}")
-    with col_view:
-        st.markdown(f"#### Visualizador · {selected_file.name}")
-        render_pdf(selected_file)
 
-def admin_sidebar() -> None:
+    with col_view:
+        st.markdown(f"#### Visualizador · {selected['name']}")
+        render_supabase_pdf(selected["path"])
+
+
+
     st.sidebar.markdown("### Configuración")
     mode = "Supabase" if is_supabase_enabled() else "Local CSV"
     st.sidebar.info(f"Modo de datos: **{mode}**")

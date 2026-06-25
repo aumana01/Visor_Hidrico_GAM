@@ -1710,15 +1710,15 @@ def vista_necesidades() -> None:
 
 
 def get_secret_or_env(name: str, default: str = "") -> str:
-        """Lee secretos desde Streamlit Cloud o variables de entorno locales."""
-        try:
-            value = st.secrets.get(name, "")
-            if value:
-                return str(value)
-        except Exception:
-            pass
+    """Lee secretos desde Streamlit Cloud o variables de entorno locales."""
+    try:
+        value = st.secrets.get(name, "")
+        if value:
+            return str(value)
+    except Exception:
+        pass
 
-        return os.getenv(name, default)
+    return os.getenv(name, default)
 
 
 @st.cache_resource(show_spinner=False)
@@ -1814,31 +1814,43 @@ def list_supabase_pdfs() -> list[dict]:
     return out
 
 
-def upload_pdf_to_supabase(uploaded_file) -> None:
-    """Sube un PDF a Supabase Storage."""
+def upload_pdf_to_supabase(uploaded_file) -> str:
+    """Sube un PDF a Supabase Storage y retorna la ruta creada."""
     client = supabase_storage_client()
     path = storage_pdf_path(uploaded_file.name)
     data = uploaded_file.getvalue()
 
-    try:
-        client.storage.from_(PDF_BUCKET).upload(
-            path,
-            data,
-            file_options={
-                "content-type": "application/pdf",
-                "upsert": "false",
-            },
-        )
-    except TypeError:
-        # Compatibilidad con algunas versiones de supabase-py.
-        client.storage.from_(PDF_BUCKET).upload(
-            path,
-            data,
-            file_options={
-                "contentType": "application/pdf",
-                "upsert": "false",
-            },
-        )
+    if not data:
+        raise RuntimeError(f"El archivo {uploaded_file.name} está vacío o no se pudo leer.")
+
+    file_options_variants = [
+        {"content-type": "application/pdf", "upsert": "false"},
+        {"contentType": "application/pdf", "upsert": "false"},
+    ]
+
+    last_error = None
+    for file_options in file_options_variants:
+        try:
+            response = client.storage.from_(PDF_BUCKET).upload(
+                path,
+                data,
+                file_options=file_options,
+            )
+
+            # Algunas versiones retornan dict con error en lugar de lanzar excepción.
+            if isinstance(response, dict) and response.get("error"):
+                raise RuntimeError(str(response.get("error")))
+
+            return path
+
+        except TypeError as exc:
+            last_error = exc
+            continue
+
+    if last_error is not None:
+        raise last_error
+
+    return path
 
 
 def delete_pdf_from_supabase(path: str) -> None:
@@ -1951,6 +1963,25 @@ def vista_lecciones() -> None:
         )
         return
 
+    service_role_ok = bool(get_secret_or_env("SUPABASE_SERVICE_ROLE_KEY"))
+    if not service_role_ok:
+        st.warning(
+            "No se detecta `SUPABASE_SERVICE_ROLE_KEY` en los secrets de Streamlit. "
+            "Si el bucket es privado, la carga y el borrado pueden fallar por permisos. "
+            "Agregue esa clave en Streamlit Cloud → Manage app → Settings → Secrets."
+        )
+
+    with st.expander("Diagnóstico de Supabase Storage", expanded=False):
+        st.write(f"**Bucket:** `{PDF_BUCKET}`")
+        st.write(f"**Carpeta:** `{PDF_FOLDER}`")
+        st.write(f"**Service role configurado:** {'Sí' if service_role_ok else 'No'}")
+        if st.button("Probar conexión con Storage", use_container_width=True):
+            try:
+                test_files = list_supabase_pdfs()
+                st.success(f"Conexión correcta. PDFs encontrados: {len(test_files)}")
+            except Exception as exc:
+                st.error(f"Error de conexión con Supabase Storage: {exc}")
+
     with st.expander("Cargar nuevos PDFs", expanded=True):
         uploaded_files = st.file_uploader(
             "Seleccione uno o varios PDFs",
@@ -1960,26 +1991,37 @@ def vista_lecciones() -> None:
         )
 
         if uploaded_files:
+            st.caption(
+                f"Archivos seleccionados: {len(uploaded_files)}. "
+                "Presione el botón para cargarlos en Supabase Storage."
+            )
+
             if st.button("Subir PDFs a Supabase", type="primary", use_container_width=True):
-                ok = 0
-                errors = []
+                ok_paths: list[str] = []
+                errors: list[str] = []
 
-                for uploaded_file in uploaded_files:
-                    try:
-                        upload_pdf_to_supabase(uploaded_file)
-                        ok += 1
-                    except Exception as exc:
-                        errors.append(f"{uploaded_file.name}: {exc}")
+                with st.spinner("Subiendo PDFs a Supabase Storage..."):
+                    for uploaded_file in uploaded_files:
+                        try:
+                            created_path = upload_pdf_to_supabase(uploaded_file)
+                            ok_paths.append(created_path)
+                        except Exception as exc:
+                            errors.append(f"{uploaded_file.name}: {exc}")
 
-                if ok:
-                    st.success(f"Se cargaron {ok} PDF en Supabase Storage.")
+                if ok_paths:
+                    st.success(f"Se cargaron {len(ok_paths)} PDF en Supabase Storage.")
+                    with st.expander("Rutas cargadas", expanded=False):
+                        for path in ok_paths:
+                            st.write(f"- `{path}`")
 
                 if errors:
-                    st.error("Algunos archivos no pudieron cargarse:")
+                    st.error("Algunos archivos no pudieron cargarse. Detalle:")
                     for err in errors:
                         st.write(f"- {err}")
-
-                st.rerun()
+                    st.info(
+                        "Si el error indica permisos, revise que exista el bucket "
+                        f"`{PDF_BUCKET}` y que `SUPABASE_SERVICE_ROLE_KEY` esté configurado en Streamlit Secrets."
+                    )
 
     files = list_supabase_pdfs()
 
@@ -2038,8 +2080,7 @@ def vista_lecciones() -> None:
         ):
             try:
                 delete_pdf_from_supabase(selected["path"])
-                st.success("PDF eliminado correctamente de Supabase.")
-                st.rerun()
+                st.success("PDF eliminado correctamente de Supabase. Actualice o cambie de vista para refrescar la lista.")
             except Exception as exc:
                 st.error(f"No se pudo eliminar el PDF: {exc}")
 

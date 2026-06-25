@@ -1919,7 +1919,7 @@ def render_supabase_pdf(path: str, height: int = 780) -> None:
             style="border:1px solid #D0D7E2; border-radius:8px;"
         ></iframe>
     </div>
-    """
+    ""
 
     components.html(html_code, height=height + 80, scrolling=True)
 
@@ -2043,37 +2043,51 @@ def vista_lecciones() -> None:
             except Exception as exc:
                 st.error(f"No se pudo eliminar el PDF: {exc}")
 
-    with col_view:
+        with col_view:
         st.markdown(f"#### Visualizador · {selected['name']}")
         render_supabase_pdf(selected["path"])
 
 
-
+def admin_sidebar() -> None:
     st.sidebar.markdown("### Configuración")
+
     mode = "Supabase" if is_supabase_enabled() else "Local CSV"
     st.sidebar.info(f"Modo de datos: **{mode}**")
+
     with st.sidebar.expander("Carga inicial / mantenimiento"):
-        st.caption("Use esta opción después de crear las tablas en Supabase. No publique claves en GitHub.")
+        st.caption(
+            "Use esta opción después de crear las tablas en Supabase. "
+            "No publique claves en GitHub."
+        )
+
         overwrite = st.checkbox("Sobrescribir datos existentes", value=False)
+
         if st.button("Cargar datos base a Supabase", disabled=not is_supabase_enabled()):
             try:
                 result = seed_supabase(overwrite=overwrite)
-                st.success("Datos base cargados: " + ", ".join([f"{k}={v}" for k, v in result.items()]))
+                st.success(
+                    "Datos base cargados: "
+                    + ", ".join([f"{k}={v}" for k, v in result.items()])
+                )
                 st.rerun()
             except Exception as exc:
                 st.error(f"No se pudo cargar datos base: {exc}")
+
         if st.button("Restablecer CSV local", disabled=is_supabase_enabled()):
             deleted = reset_local_runtime()
+
             if deleted:
                 st.success("Datos locales restablecidos: " + ", ".join(deleted))
             else:
                 st.info("No había archivos locales por restablecer.")
+
             st.rerun()
 
 
 def main() -> None:
     title()
     admin_sidebar()
+
     view = st.sidebar.radio(
         "Vista",
         [
@@ -2083,6 +2097,7 @@ def main() -> None:
             "4. Lecciones aprendidas",
         ],
     )
+
     if view.startswith("1"):
         vista_proyectos()
     elif view.startswith("2"):

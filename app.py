@@ -1919,7 +1919,7 @@ def render_supabase_pdf(path: str, height: int = 780) -> None:
             style="border:1px solid #D0D7E2; border-radius:8px;"
         ></iframe>
     </div>
-    """
+    ""
 
     components.html(html_code, height=height + 80, scrolling=True)
 
@@ -1987,7 +1987,7 @@ def vista_lecciones() -> None:
         st.info("No hay PDFs almacenados en Supabase Storage.")
         return
 
-    col_list, col_view = st.columns([1, 2])
+        col_list, col_view = st.columns([1, 2])
 
     with col_list:
         st.markdown("#### Archivos PDF en Supabase")
@@ -2043,7 +2043,7 @@ def vista_lecciones() -> None:
             except Exception as exc:
                 st.error(f"No se pudo eliminar el PDF: {exc}")
 
-        with col_view:
+    with col_view:
         st.markdown(f"#### Visualizador · {selected['name']}")
         render_supabase_pdf(selected["path"])
 

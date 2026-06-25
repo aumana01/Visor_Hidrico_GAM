@@ -1896,44 +1896,79 @@ def render_supabase_pdf(path: str, height: int = 780) -> None:
     """
     Visualizador PDF desde Supabase Storage.
 
-    Usa una URL firmada para que funcione aunque el bucket sea privado.
+    Para mayor compatibilidad con Streamlit Cloud, se descarga el PDF como bytes
+    desde Supabase y se incrusta como base64, en lugar de usar directamente
+    la URL firmada dentro de un iframe.
     """
-    url = signed_pdf_url(path)
+    try:
+        pdf_bytes = download_pdf_from_supabase(path)
 
-    if not url:
-        st.warning("No se pudo generar URL temporal para visualizar el PDF.")
-        return
+        if not pdf_bytes:
+            st.warning("El PDF se descargó vacío desde Supabase.")
+            return
 
-    html_code = f"""
-    <div style="font-family: Arial, sans-serif;">
-        <div style="margin-bottom: 10px;">
-            <a
-                href="{url}"
-                target="_blank"
-                style="
-                    display:inline-block;
-                    padding:8px 12px;
-                    background:#002B5C;
-                    color:white;
-                    text-decoration:none;
-                    border-radius:6px;
-                    font-size:13px;
-                "
+        b64_pdf = base64.b64encode(pdf_bytes).decode("utf-8")
+        signed_url = signed_pdf_url(path)
+
+        html_code = f"""
+        <div style="font-family: Arial, sans-serif;">
+
+            <div style="margin-bottom: 10px;">
+                <a
+                    href="{signed_url}"
+                    target="_blank"
+                    style="
+                        display:inline-block;
+                        padding:8px 12px;
+                        background:#002B5C;
+                        color:white;
+                        text-decoration:none;
+                        border-radius:6px;
+                        font-size:13px;
+                        font-weight:600;
+                    "
+                >
+                    Abrir PDF en nueva pestaña
+                </a>
+            </div>
+
+            <object
+                data="data:application/pdf;base64,{b64_pdf}"
+                type="application/pdf"
+                width="100%"
+                height="{height}px"
+                style="border:1px solid #D0D7E2; border-radius:8px;"
             >
-                Abrir PDF en nueva pestaña
-            </a>
+                <embed
+                    src="data:application/pdf;base64,{b64_pdf}"
+                    type="application/pdf"
+                    width="100%"
+                    height="{height}px"
+                    style="border:1px solid #D0D7E2; border-radius:8px;"
+                />
+
+                <div style="
+                    padding:16px;
+                    background:#F5F7FA;
+                    border:1px solid #D0D7E2;
+                    border-radius:8px;
+                    color:#1F2937;
+                ">
+                    <p>
+                        El navegador no permitió visualizar el PDF embebido.
+                        Use el botón superior para abrirlo en una nueva pestaña
+                        o descárguelo desde el panel izquierdo.
+                    </p>
+                </div>
+            </object>
+
         </div>
+        """
 
-        <iframe
-            src="{url}"
-            width="100%"
-            height="{height}"
-            style="border:1px solid #D0D7E2; border-radius:8px;"
-        ></iframe>
-    </div>
-    """
+        components.html(html_code, height=height + 90, scrolling=True)
 
-    components.html(html_code, height=height + 80, scrolling=True)
+    except Exception as exc:
+        st.error(f"No se pudo visualizar el PDF desde Supabase: {exc}")
 
 
 def format_file_size(size: object) -> str:

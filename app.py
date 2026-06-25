@@ -1710,15 +1710,15 @@ def vista_necesidades() -> None:
 
 
     def get_secret_or_env(name: str, default: str = "") -> str:
-    """Lee secretos desde Streamlit Cloud o variables de entorno locales."""
-    try:
-        value = st.secrets.get(name, "")
-        if value:
-            return str(value)
-    except Exception:
-        pass
+        """Lee secretos desde Streamlit Cloud o variables de entorno locales."""
+        try:
+            value = st.secrets.get(name, "")
+            if value:
+                return str(value)
+        except Exception:
+            pass
 
-    return os.getenv(name, default)
+        return os.getenv(name, default)
 
 
 @st.cache_resource(show_spinner=False)

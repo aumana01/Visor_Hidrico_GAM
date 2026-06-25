@@ -1919,7 +1919,7 @@ def render_supabase_pdf(path: str, height: int = 780) -> None:
             style="border:1px solid #D0D7E2; border-radius:8px;"
         ></iframe>
     </div>
-    ""
+    """
 
     components.html(html_code, height=height + 80, scrolling=True)
 

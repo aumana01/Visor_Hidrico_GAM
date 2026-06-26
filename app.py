@@ -674,7 +674,7 @@ def vista_proyectos() -> None:
     "actividades_criticas": st.column_config.SelectboxColumn(
     "Actividades críticas",
     options=["", *actividades_options],
-    ),
+),
 
     st.markdown(
         """

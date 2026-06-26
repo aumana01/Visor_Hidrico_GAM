@@ -516,18 +516,61 @@ def normalize_project_rows(df: pd.DataFrame, sistemas: pd.DataFrame) -> pd.DataF
     return out
 
 
-def normalize_need_rows(df: pd.DataFrame, sistemas: pd.DataFrame) -> pd.DataFrame:
-    out = ensure_columns(df, NECESIDAD_VISIBLE_COLS)
-    by_name_code, _, by_code_name, _ = system_maps(sistemas)
-    if "sistema_de_abastecimiento" in out.columns and "codigo_de_sistema" in out.columns:
-        names = out["sistema_de_abastecimiento"].astype(str)
-        mapped_code = names.map(by_name_code)
-        out.loc[mapped_code.notna(), "codigo_de_sistema"] = mapped_code[mapped_code.notna()]
-        codes = out["codigo_de_sistema"].astype(str)
-        mapped_name = codes.map(by_code_name)
-        empty_name = out["sistema_de_abastecimiento"].astype(str).str.strip().eq("")
-        out.loc[mapped_name.notna() & empty_name, "sistema_de_abastecimiento"] = mapped_name[mapped_name.notna() & empty_name]
-    return out
+def read_catalogo_actividades_local() -> pd.DataFrame:
+    """
+    Lee el catálogo de actividades críticas desde el CSV del repositorio.
+
+    Esto permite que la app use la columna concatenada:
+    Traba_Riesgo_Concatenado
+
+    Aunque la app esté conectada a Supabase, este catálogo se toma del archivo:
+    data/catalogo_actividades_criticas.csv
+    """
+    path = Path(__file__).resolve().parent / "data" / "catalogo_actividades_criticas.csv"
+
+    if path.exists():
+        return pd.read_csv(path, dtype=str, keep_default_na=False)
+
+    return read_table("catalogo_actividades_criticas")
+
+
+def get_actividades_criticas_options(catalogo_act: pd.DataFrame) -> list[str]:
+    """
+    Devuelve las opciones del desplegable de actividades críticas.
+
+    Prioriza la columna concatenada:
+    Traba_Riesgo_Concatenado
+    """
+    if catalogo_act.empty:
+        return []
+
+    # Normaliza nombres por si vienen con espacios.
+    catalogo_act = catalogo_act.copy()
+    catalogo_act.columns = [str(c).strip() for c in catalogo_act.columns]
+
+    preferred_cols = [
+        "Traba_Riesgo_Concatenado",
+        "traba_riesgo_concatenado",
+        "Traba / Riesgo Concatenado",
+        "Traba_Riesgo",
+        "Actividad_Concatenada",
+    ]
+
+    for col in preferred_cols:
+        if col in catalogo_act.columns:
+            return clean_options(catalogo_act[col], include_blank=False)
+
+    # Si no encuentra el nombre exacto, busca cualquier columna que tenga "concat".
+    for col in catalogo_act.columns:
+        if "concat" in str(col).lower():
+            return clean_options(catalogo_act[col], include_blank=False)
+
+    # Respaldo: usa la segunda columna del catálogo.
+    if catalogo_act.shape[1] >= 2:
+        return clean_options(catalogo_act.iloc[:, 1], include_blank=False)
+
+    # Último respaldo: usa la primera columna.
+    return clean_options(catalogo_act.iloc[:, 0], include_blank=False)
 
 
 def vista_proyectos() -> None:
@@ -535,7 +578,7 @@ def vista_proyectos() -> None:
     proyectos = read_table("proyectos")
     sistemas = read_table("sistemas_clusters")
     catalogo_bi = read_table("catalogo_beneficios_impactos")
-    catalogo_act = read_table("catalogo_actividades_criticas")
+    catalogo_act = read_catalogo_actividades_local()
     catalogo_terrenos = read_table("catalogo_situacion_terrenos")
 
     if proyectos.empty:
@@ -628,7 +671,10 @@ def vista_proyectos() -> None:
     terrenos_options = clean_options(catalogo_terrenos.iloc[:, 0] if not catalogo_terrenos.empty else pd.Series(dtype=str), proyectos.get("situacion_terrenos", pd.Series(dtype=str)), include_blank=True)
     beneficios_options = clean_options(catalogo_bi.get("Beneficios", pd.Series(dtype=str)), parse_options(proyectos.get("beneficios", pd.Series(dtype=str))))
     impactos_options = clean_options(catalogo_bi.get("Impacto", pd.Series(dtype=str)), parse_options(proyectos.get("impacto", pd.Series(dtype=str))))
-    actividades_options = clean_options(catalogo_act.iloc[:, 1] if not catalogo_act.empty and catalogo_act.shape[1] > 1 else pd.Series(dtype=str), parse_options(proyectos.get("actividades_criticas", pd.Series(dtype=str))))
+    "actividades_criticas": st.column_config.SelectboxColumn(
+    "Actividades críticas",
+    options=["", *actividades_options],
+    ),
 
     st.markdown(
         """

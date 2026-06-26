@@ -668,13 +668,23 @@ def vista_proyectos() -> None:
             "Por definir",
         ],
     )
-    terrenos_options = clean_options(catalogo_terrenos.iloc[:, 0] if not catalogo_terrenos.empty else pd.Series(dtype=str), proyectos.get("situacion_terrenos", pd.Series(dtype=str)), include_blank=True)
-    beneficios_options = clean_options(catalogo_bi.get("Beneficios", pd.Series(dtype=str)), parse_options(proyectos.get("beneficios", pd.Series(dtype=str))))
-    impactos_options = clean_options(catalogo_bi.get("Impacto", pd.Series(dtype=str)), parse_options(proyectos.get("impacto", pd.Series(dtype=str))))
-    "actividades_criticas": st.column_config.SelectboxColumn(
-    "Actividades críticas",
-    options=["", *actividades_options],
-),
+    terrenos_options = clean_options(
+    catalogo_terrenos.iloc[:, 0] if not catalogo_terrenos.empty else pd.Series(dtype=str),
+    proyectos.get("situacion_terrenos", pd.Series(dtype=str)),
+    include_blank=True,
+)
+
+beneficios_options = clean_options(
+    catalogo_bi.get("Beneficios", pd.Series(dtype=str)),
+    parse_options(proyectos.get("beneficios", pd.Series(dtype=str))),
+)
+
+impactos_options = clean_options(
+    catalogo_bi.get("Impacto", pd.Series(dtype=str)),
+    parse_options(proyectos.get("impacto", pd.Series(dtype=str))),
+)
+
+actividades_options = get_actividades_criticas_options(catalogo_act)
 
     st.markdown(
         """
@@ -714,25 +724,52 @@ def vista_proyectos() -> None:
         project_editor_columns = [col for col in project_editor_columns if col in filtered.columns]
         st.caption("Edite directamente la tabla. Los campos principales son desplegables; los cambios se guardan en Supabase o en CSV local.")
         column_config = {
-            "id": st.column_config.NumberColumn("ID", disabled=True),
-            "accion": st.column_config.SelectboxColumn("Acción", options=clean_options(proyectos.get("accion", pd.Series(dtype=str)), ACCION_OPTIONS)),
-            "estado_iniciativa": st.column_config.SelectboxColumn("Estado de la iniciativa", options=clean_options(proyectos.get("estado_iniciativa", pd.Series(dtype=str)), ESTADO_INICIATIVA_OPTIONS)),
-            "tipo_incorporacion": st.column_config.SelectboxColumn("Tipo de incorporación", options=clean_options(proyectos.get("tipo_incorporacion", pd.Series(dtype=str)), TIPO_INCORPORACION_OPTIONS)),
-            "sistema_nombre": st.column_config.SelectboxColumn("Sistema beneficiado", options=sistema_options),
-            "sistema_codigo": st.column_config.SelectboxColumn("Código sistema", options=sistema_codigo_options),
-            "cluster": st.column_config.SelectboxColumn("Cluster", options=cluster_options),
-            "beneficios": st.column_config.SelectboxColumn("Beneficios", options=clean_options(proyectos.get("beneficios", pd.Series(dtype=str)), beneficios_options, include_blank=True)),
-            "impacto": st.column_config.SelectboxColumn("Impacto", options=clean_options(proyectos.get("impacto", pd.Series(dtype=str)), impactos_options, include_blank=True)),
-            "actividades_criticas": st.column_config.SelectboxColumn("Actividades críticas", options=clean_options(proyectos.get("actividades_criticas", pd.Series(dtype=str)), actividades_options, include_blank=True)),
-            "dependencia_responsable": st.column_config.SelectboxColumn("Dependencia responsable", options=dependencia_options),
-            "estudio_hidrogeologico": st.column_config.SelectboxColumn("Estudio hidrogeológico", options=clean_options(proyectos.get("estudio_hidrogeologico", pd.Series(dtype=str)), ESTUDIO_OPTIONS, include_blank=True)),
-            "situacion_terrenos": st.column_config.SelectboxColumn("Situación de terrenos", options=terrenos_options),
-            "anio_efecto": st.column_config.NumberColumn("Año efecto", min_value=2024, max_value=2040, step=1),
-            "latitud": st.column_config.NumberColumn("Latitud", format="%.7f"),
-            "longitud": st.column_config.NumberColumn("Longitud", format="%.7f"),
-            "expectativa_caudal_lps": st.column_config.NumberColumn("Expectativa L/s", format="%.2f"),
-            "caudal_temporal_lps": st.column_config.NumberColumn("Caudal temporal L/s", format="%.2f"),
-        }
+    "id": st.column_config.NumberColumn("ID", disabled=True),
+    "accion": st.column_config.SelectboxColumn(
+        "Acción",
+        options=clean_options(proyectos.get("accion", pd.Series(dtype=str)), ACCION_OPTIONS),
+    ),
+    "estado_iniciativa": st.column_config.SelectboxColumn(
+        "Estado de la iniciativa",
+        options=clean_options(proyectos.get("estado_iniciativa", pd.Series(dtype=str)), ESTADO_INICIATIVA_OPTIONS),
+    ),
+    "tipo_incorporacion": st.column_config.SelectboxColumn(
+        "Tipo de incorporación",
+        options=clean_options(proyectos.get("tipo_incorporacion", pd.Series(dtype=str)), TIPO_INCORPORACION_OPTIONS),
+    ),
+    "sistema_nombre": st.column_config.SelectboxColumn("Sistema beneficiado", options=sistema_options),
+    "sistema_codigo": st.column_config.SelectboxColumn("Código sistema", options=sistema_codigo_options),
+    "cluster": st.column_config.SelectboxColumn("Cluster", options=cluster_options),
+    "beneficios": st.column_config.SelectboxColumn(
+        "Beneficios",
+        options=clean_options(proyectos.get("beneficios", pd.Series(dtype=str)), beneficios_options, include_blank=True),
+    ),
+    "impacto": st.column_config.SelectboxColumn(
+        "Impacto",
+        options=clean_options(proyectos.get("impacto", pd.Series(dtype=str)), impactos_options, include_blank=True),
+    ),
+    "actividades_criticas": st.column_config.SelectboxColumn(
+        "Actividades críticas",
+        options=["", *actividades_options],
+    ),
+    "dependencia_responsable": st.column_config.SelectboxColumn(
+        "Dependencia responsable",
+        options=dependencia_options,
+    ),
+    "estudio_hidrogeologico": st.column_config.SelectboxColumn(
+        "Estudio hidrogeológico",
+        options=clean_options(proyectos.get("estudio_hidrogeologico", pd.Series(dtype=str)), ESTUDIO_OPTIONS, include_blank=True),
+    ),
+    "situacion_terrenos": st.column_config.SelectboxColumn(
+        "Situación de terrenos",
+        options=terrenos_options,
+    ),
+    "anio_efecto": st.column_config.NumberColumn("Año efecto", min_value=2024, max_value=2040, step=1),
+    "latitud": st.column_config.NumberColumn("Latitud", format="%.7f"),
+    "longitud": st.column_config.NumberColumn("Longitud", format="%.7f"),
+    "expectativa_caudal_lps": st.column_config.NumberColumn("Expectativa L/s", format="%.2f"),
+    "caudal_temporal_lps": st.column_config.NumberColumn("Caudal temporal L/s", format="%.2f"),
+}
         edited = st.data_editor(
             filtered,
             use_container_width=True,

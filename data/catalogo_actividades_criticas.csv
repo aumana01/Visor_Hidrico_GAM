@@ -1,89 +1,88 @@
-﻿Actividades Críticas para su avance,Actividades Críticas para su avance_2
-Categoría,Traba / Riesgo
-Permisos,Retrasos en viabilidad ambiental (SETENA)
-Permisos,"Demoras en visados, CFIA, municipalidad"
-Permisos,Caducidad de permisos o constancias
-Terrenos,Falta de servidumbres o derechos de paso
-Terrenos,Problemas de adquisición de terrenos
-Financiamiento,Proyectos sin financiamiento definido
-Financiamiento,Atrasos en asignación presupuestaria
-Financiamiento,Dependencia de fondos externos
-Contratación,Licitaciones desiertas o infructuosas
-Contratación,Apelaciones ante CGR
-Contratación,Deficiencias en TDR/carteles
-Contratación,Órdenes de cambio contractuales
-Contratación,Devolución de trámites con Proveeduría
-Ejecución,Mala planificación del contratista
-Ejecución,Retrasos en suministro de equipos
-Ejecución,Problemas en puesta en operación
-Coordinación,Falta de coordinación interinstitucional
-Coordinación,"Interferencia con otras obras (CONAVI, MOPT)"
-Información,"Falta de información técnica (planos, GIS)"
-Gestión interna,Falta de personal técnico/supervisión
-Gestión interna,"Dependencia entre áreas (legal, planificación, operación)"
-Social,Conflictos o resistencia comunitaria
-Operación,"Restricciones operativas (suspensiones, racionamientos, dificultad para realizar una maniobra operativa)"
-Perforación de pozos,Fallas mecánicas en equipos de perforación
-Perforación de pozos,Baja productividad en perforación (litología compleja)
-Perforación de pozos,Colapso de pozo o inestabilidad de paredes
-Perforación de pozos,No alcanzar caudal esperado en perforación
-Perforación de pozos,"Problemas en pruebas de bombeo (drawdown, recuperación)"
-Perforación de pozos,Interferencias entre pozos cercanos
-Perforación de pozos,Disponibilidad limitada de maquinaria especializada
-Calidad de agua,"Parámetros fuera de norma (hierro, manganeso, arsénico, etc.)"
-Calidad de agua,Variabilidad temporal de calidad (estacional)
-Calidad de agua,Resultados de laboratorio inconclusos o inconsistentes
-Calidad de agua,Requerimiento de sistemas de tratamiento no previstos
-Topografía,Terreno con pendientes fuertes o acceso complicado
-Topografía,Alta roca o suelo muy duro
-Topografía,"Necesidad de obras especiales (anclajes, muros, túneles)"
-Lejanía,Ubicación remota del proyecto
-Lejanía,"Falta de infraestructura de acceso (caminos, electricidad)"
-Lejanía,Dificultad para supervisión e inspección técnica
-Costos,Alto costo por km de tubería o bombeo
-Costos,"Incremento en precios de materiales (PVC, PEAD, acero)"
-Costos,Sobredimensionamiento inicial o mala estimación
-Costos,Relación costo-beneficio desfavorable en evaluación
-Costos / Logística,Altos costos de importación de materiales
-Costos / Logística,Variabilidad en tiempos de importación
-Costos / Logística,Dependencia de proveedores internacionales especializados
-Costos / Logística,Incompatibilidad técnica de equipos importados
-Costos / Logística,Falta de repuestos o soporte técnico local
-Energía / Infraestructura,Falta de electrificación en media tensión
-Energía / Infraestructura,Necesidad de extensión de red eléctrica (34.5 kV u otras)
-Energía / Infraestructura,Tramitología con ICE para acometidas eléctricas
-Energía / Infraestructura,Falta de capacidad en red eléctrica existente
-Energía / Infraestructura,Requerimiento de ampliación de transformadores
-Energía / Infraestructura,Tiempos de entrega de transformadores y equipo eléctrico
-Licitación,Baja cantidad de oferentes (mercado limitado)
-Licitación,Falta de precios de referencia en SICOP
-Licitación,Especificaciones técnicas muy restrictivas
-Licitación,Dependencia de múltiples cotizaciones obligatorias
-Licitación,Licitaciones por demanda con entregas tardías
-Licitación,Desfase entre plazos administrativos y necesidades técnicas
-Licitación,Procesos fragmentados (caja chica vs licitación formal)
-Planificación (MIDEPLAN),Observaciones reiteradas por parte de MIDEPLAN en etapas de revisión
-Planificación (MIDEPLAN),Cambios en lineamientos metodológicos de inversión pública
-Planificación (MIDEPLAN),Falta de alineación con políticas o planes nacionales
-Planificación (MIDEPLAN),Rechazo o devolución de perfiles/proyectos formulados
-Planificación (MIDEPLAN),Retrasos en la obtención de avales técnicos o sectoriales
-Planificación (MIDEPLAN),Inconsistencias entre estudios técnicos y ficha de proyecto
-Formulación,Deficiente estructuración del perfil o prefactibilidad
-Formulación,"Falta de estudios base (hidrogeología, topografía, demanda, etc.)"
-Formulación,Supuestos técnicos o de demanda no sustentados
-Formulación,Inconsistencias en estimación de costos o cronogramas
-Formulación,Cambios de alcance durante la formulación
-Formulación,"Falta de integración entre componentes (obra civil, eléctrico, mecánico, etc.)"
-Inscripción (Banco de Proyectos),Atrasos en proceso de inscripción en el Banco de Proyectos
-Inscripción (Banco de Proyectos),Incompletitud de requisitos para inscripción
-Inscripción (Banco de Proyectos),Observaciones pendientes sin subsanar
-Inscripción (Banco de Proyectos),Desactualización de información registrada
-Inscripción (Banco de Proyectos),Desfase entre formulación técnica y registro administrativo
-Inscripción (Banco de Proyectos),Dependencia de otras instituciones para completar requisitos de inscripción
-Convenios (APP / Público-Privado),Complejidad legal en estructuración de convenios
-Convenios (APP / Público-Privado),Falta de marco claro o lineamientos específicos aplicables
-Convenios (APP / Público-Privado),Largos tiempos de negociación entre partes
-Convenios (APP / Público-Privado),Dificultad para asignación de riesgos entre actores
-Convenios (APP / Público-Privado),Requerimiento de múltiples avales institucionales
-Convenios (APP / Público-Privado),Dependencia de voluntad política o cambios administrativos
-Otro,Otro
+Categoría,Traba_Riesgo_Concatenado
+Permisos,Permisos | Retrasos en viabilidad ambiental (SETENA)
+Permisos,"Permisos | Demoras en visados, CFIA, municipalidad"
+Permisos,Permisos | Caducidad de permisos o constancias
+Terrenos,Terrenos | Falta de servidumbres o derechos de paso
+Terrenos,Terrenos | Problemas de adquisición de terrenos
+Financiamiento,Financiamiento | Proyectos sin financiamiento definido
+Financiamiento,Financiamiento | Atrasos en asignación presupuestaria
+Financiamiento,Financiamiento | Dependencia de fondos externos
+Contratación,Contratación | Licitaciones desiertas o infructuosas
+Contratación,Contratación | Apelaciones ante CGR
+Contratación,Contratación | Deficiencias en TDR/carteles
+Contratación,Contratación | Órdenes de cambio contractuales
+Contratación,Contratación | Devolución de trámites con Proveeduría
+Ejecución,Ejecución | Mala planificación del contratista
+Ejecución,Ejecución | Retrasos en suministro de equipos
+Ejecución,Ejecución | Problemas en puesta en operación
+Coordinación,Coordinación | Falta de coordinación interinstitucional
+Coordinación,"Coordinación | Interferencia con otras obras (CONAVI, MOPT)"
+Información,"Información | Falta de información técnica (planos, GIS)"
+Gestión interna,Gestión interna | Falta de personal técnico/supervisión
+Gestión interna,"Gestión interna | Dependencia entre áreas (legal, planificación, operación)"
+Social,Social | Conflictos o resistencia comunitaria
+Operación,"Operación | Restricciones operativas (suspensiones, racionamientos, dificultad para realizar una maniobra operativa)"
+Perforación de pozos,Perforación de pozos | Fallas mecánicas en equipos de perforación
+Perforación de pozos,Perforación de pozos | Baja productividad en perforación (litología compleja)
+Perforación de pozos,Perforación de pozos | Colapso de pozo o inestabilidad de paredes
+Perforación de pozos,Perforación de pozos | No alcanzar caudal esperado en perforación
+Perforación de pozos,"Perforación de pozos | Problemas en pruebas de bombeo (drawdown, recuperación)"
+Perforación de pozos,Perforación de pozos | Interferencias entre pozos cercanos
+Perforación de pozos,Perforación de pozos | Disponibilidad limitada de maquinaria especializada
+Calidad de agua,"Calidad de agua | Parámetros fuera de norma (hierro, manganeso, arsénico, etc.)"
+Calidad de agua,Calidad de agua | Variabilidad temporal de calidad (estacional)
+Calidad de agua,Calidad de agua | Resultados de laboratorio inconclusos o inconsistentes
+Calidad de agua,Calidad de agua | Requerimiento de sistemas de tratamiento no previstos
+Topografía,Topografía | Terreno con pendientes fuertes o acceso complicado
+Topografía,Topografía | Alta roca o suelo muy duro
+Topografía,"Topografía | Necesidad de obras especiales (anclajes, muros, túneles)"
+Lejanía,Lejanía | Ubicación remota del proyecto
+Lejanía,"Lejanía | Falta de infraestructura de acceso (caminos, electricidad)"
+Lejanía,Lejanía | Dificultad para supervisión e inspección técnica
+Costos,Costos | Alto costo por km de tubería o bombeo
+Costos,"Costos | Incremento en precios de materiales (PVC, PEAD, acero)"
+Costos,Costos | Sobredimensionamiento inicial o mala estimación
+Costos,Costos | Relación costo-beneficio desfavorable en evaluación
+Costos / Logística,Costos / Logística | Altos costos de importación de materiales
+Costos / Logística,Costos / Logística | Variabilidad en tiempos de importación
+Costos / Logística,Costos / Logística | Dependencia de proveedores internacionales especializados
+Costos / Logística,Costos / Logística | Incompatibilidad técnica de equipos importados
+Costos / Logística,Costos / Logística | Falta de repuestos o soporte técnico local
+Energía / Infraestructura,Energía / Infraestructura | Falta de electrificación en media tensión
+Energía / Infraestructura,Energía / Infraestructura | Necesidad de extensión de red eléctrica (34.5 kV u otras)
+Energía / Infraestructura,Energía / Infraestructura | Tramitología con ICE para acometidas eléctricas
+Energía / Infraestructura,Energía / Infraestructura | Falta de capacidad en red eléctrica existente
+Energía / Infraestructura,Energía / Infraestructura | Requerimiento de ampliación de transformadores
+Energía / Infraestructura,Energía / Infraestructura | Tiempos de entrega de transformadores y equipo eléctrico
+Licitación,Licitación | Baja cantidad de oferentes (mercado limitado)
+Licitación,Licitación | Falta de precios de referencia en SICOP
+Licitación,Licitación | Especificaciones técnicas muy restrictivas
+Licitación,Licitación | Dependencia de múltiples cotizaciones obligatorias
+Licitación,Licitación | Licitaciones por demanda con entregas tardías
+Licitación,Licitación | Desfase entre plazos administrativos y necesidades técnicas
+Licitación,Licitación | Procesos fragmentados (caja chica vs licitación formal)
+Planificación (MIDEPLAN),Planificación (MIDEPLAN) | Observaciones reiteradas por parte de MIDEPLAN en etapas de revisión
+Planificación (MIDEPLAN),Planificación (MIDEPLAN) | Cambios en lineamientos metodológicos de inversión pública
+Planificación (MIDEPLAN),Planificación (MIDEPLAN) | Falta de alineación con políticas o planes nacionales
+Planificación (MIDEPLAN),Planificación (MIDEPLAN) | Rechazo o devolución de perfiles/proyectos formulados
+Planificación (MIDEPLAN),Planificación (MIDEPLAN) | Retrasos en la obtención de avales técnicos o sectoriales
+Planificación (MIDEPLAN),Planificación (MIDEPLAN) | Inconsistencias entre estudios técnicos y ficha de proyecto
+Formulación,Formulación | Deficiente estructuración del perfil o prefactibilidad
+Formulación,"Formulación | Falta de estudios base (hidrogeología, topografía, demanda, etc.)"
+Formulación,Formulación | Supuestos técnicos o de demanda no sustentados
+Formulación,Formulación | Inconsistencias en estimación de costos o cronogramas
+Formulación,Formulación | Cambios de alcance durante la formulación
+Formulación,"Formulación | Falta de integración entre componentes (obra civil, eléctrico, mecánico, etc.)"
+Inscripción (Banco de Proyectos),Inscripción (Banco de Proyectos) | Atrasos en proceso de inscripción en el Banco de Proyectos
+Inscripción (Banco de Proyectos),Inscripción (Banco de Proyectos) | Incompletitud de requisitos para inscripción
+Inscripción (Banco de Proyectos),Inscripción (Banco de Proyectos) | Observaciones pendientes sin subsanar
+Inscripción (Banco de Proyectos),Inscripción (Banco de Proyectos) | Desactualización de información registrada
+Inscripción (Banco de Proyectos),Inscripción (Banco de Proyectos) | Desfase entre formulación técnica y registro administrativo
+Inscripción (Banco de Proyectos),Inscripción (Banco de Proyectos) | Dependencia de otras instituciones para completar requisitos de inscripción
+Convenios (APP / Público-Privado),Convenios (APP / Público-Privado) | Complejidad legal en estructuración de convenios
+Convenios (APP / Público-Privado),Convenios (APP / Público-Privado) | Falta de marco claro o lineamientos específicos aplicables
+Convenios (APP / Público-Privado),Convenios (APP / Público-Privado) | Largos tiempos de negociación entre partes
+Convenios (APP / Público-Privado),Convenios (APP / Público-Privado) | Dificultad para asignación de riesgos entre actores
+Convenios (APP / Público-Privado),Convenios (APP / Público-Privado) | Requerimiento de múltiples avales institucionales
+Convenios (APP / Público-Privado),Convenios (APP / Público-Privado) | Dependencia de voluntad política o cambios administrativos
+Otro,Otro | Otro

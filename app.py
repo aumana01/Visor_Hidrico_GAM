@@ -1607,6 +1607,34 @@ def build_needs_summary_table(necesidades: pd.DataFrame, tipo_options: list[str]
     return pd.DataFrame(rows)
 
 
+def summarize_initiative_names(
+    values: Iterable[object],
+    max_items: int = 8,
+    max_name_length: int = 105,
+) -> str:
+    """Create a concise, HTML-safe list of initiatives for Plotly hover tags."""
+    names: list[str] = []
+    for value in values:
+        if value is None or pd.isna(value):
+            continue
+        name = str(value).strip()
+        if not name or name.lower() in {"nan", "none", "<na>"} or name in names:
+            continue
+        if len(name) > max_name_length:
+            name = name[: max_name_length - 1].rstrip() + "…"
+        names.append(name)
+
+    if not names:
+        return "• Iniciativa sin nombre registrado"
+
+    visible = names[:max_items]
+    summary = "<br>".join(f"• {html.escape(name)}" for name in visible)
+    remaining = len(names) - len(visible)
+    if remaining > 0:
+        summary += f"<br><i>+ {remaining} iniciativa(s) adicional(es)</i>"
+    return summary
+
+
 def build_needs_system_chart(
     necesidades: pd.DataFrame,
     title: str,
@@ -1616,8 +1644,13 @@ def build_needs_system_chart(
     count_rows: bool = False,
     color_map: dict[str, str] | None = None,
 ):
-    """Build a clear horizontal chart of needs grouped by water-supply system."""
-    required = ["sistema_de_abastecimiento", "tipo_de_proyecto"]
+    """Build a horizontal chart with traceable initiative details in each hover tag."""
+    required = [
+        "sistema_de_abastecimiento",
+        "tipo_de_proyecto",
+        "objetivo_de_la_iniciativa",
+        "breve_descripcion",
+    ]
     if value_col:
         required.append(value_col)
     df = ensure_columns(necesidades, required).copy()
@@ -1629,6 +1662,10 @@ def build_needs_system_chart(
         .str.strip()
         .replace({"": "Sin sistema definido"})
     )
+    initiative_name = df["objetivo_de_la_iniciativa"].fillna("").astype(str).str.strip()
+    fallback_name = df["breve_descripcion"].fillna("").astype(str).str.strip()
+    df["Iniciativa"] = initiative_name.where(initiative_name.ne(""), fallback_name)
+    df["Iniciativa"] = df["Iniciativa"].replace({"": "Iniciativa sin nombre registrado"})
     df["_categoria_normalizada"] = df["tipo_de_proyecto"].map(normalize_category_name)
 
     if categories is not None:
@@ -1638,12 +1675,27 @@ def build_needs_system_chart(
         return None
 
     if count_rows:
-        grouped = df.groupby("Sistema", as_index=False).size().rename(columns={"size": "Valor"})
+        grouped = (
+            df.groupby("Sistema", as_index=False)
+            .agg(
+                Valor=("Sistema", "size"),
+                Iniciativas=("Iniciativa", summarize_initiative_names),
+            )
+        )
     else:
         if not value_col:
             return None
         df["Valor"] = pd.to_numeric(df[value_col], errors="coerce").fillna(0)
-        grouped = df.groupby("Sistema", as_index=False)["Valor"].sum()
+        df = df[df["Valor"] > 0]
+        if df.empty:
+            return None
+        grouped = (
+            df.groupby("Sistema", as_index=False)
+            .agg(
+                Valor=("Valor", "sum"),
+                Iniciativas=("Iniciativa", summarize_initiative_names),
+            )
+        )
 
     grouped = grouped[grouped["Valor"] > 0].sort_values("Valor", ascending=True)
     if grouped.empty:
@@ -1651,6 +1703,17 @@ def build_needs_system_chart(
 
     decimals = 0 if count_rows or unit == "m³" else (2 if unit == "km" else 1)
     text_template = "%{x:,.0f}" if decimals == 0 else f"%{{x:,.{decimals}f}}"
+
+    if count_rows:
+        value_label = "Cantidad de iniciativas"
+    elif unit == "L/s":
+        value_label = "Caudal total (L/s)"
+    elif unit == "km":
+        value_label = "Red total (km)"
+    elif unit == "m³":
+        value_label = "Almacenamiento total (m³)"
+    else:
+        value_label = f"Valor total ({unit})" if unit else "Valor total"
 
     fig = px.bar(
         grouped,
@@ -1660,6 +1723,7 @@ def build_needs_system_chart(
         color="Sistema",
         text="Valor",
         title=title,
+        custom_data=["Iniciativas"],
         color_discrete_map=color_map or {},
         color_discrete_sequence=NEEDS_CHART_COLORS,
         labels={"Valor": unit or "Cantidad", "Sistema": "Sistema de abastecimiento"},
@@ -1669,9 +1733,11 @@ def build_needs_system_chart(
         textposition="outside",
         cliponaxis=False,
         hovertemplate=(
-            "<b>%{y}</b><br>"
-            + (f"{unit}: " if unit else "Cantidad: ")
+            "<b>Sistema:</b> %{y}<br>"
+            + f"<b>{value_label}:</b> "
             + text_template
+            + "<br><br><b>Iniciativas consideradas:</b><br>"
+            + "%{customdata[0]}"
             + "<extra></extra>"
         ),
     )
@@ -1689,7 +1755,7 @@ def build_needs_system_chart(
             zeroline=False,
         ),
         yaxis=dict(title=None, automargin=True),
-        hoverlabel=dict(bgcolor="white"),
+        hoverlabel=dict(bgcolor="white", font_size=13, align="left"),
     )
     return fig
 

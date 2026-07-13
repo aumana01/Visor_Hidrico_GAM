@@ -1552,12 +1552,16 @@ def vista_capacidad() -> None:
 
 
 
-CAUDAL_NEED_CATEGORIES = {
-    "aumento de recurso hidrico",
-    "mejora en trasvase de agua entre sistemas de abastecimiento",
-}
+RESOURCE_FLOW_NEED_CATEGORIES = {"aumento de recurso hidrico"}
+TRANSFER_FLOW_NEED_CATEGORIES = {"mejora en trasvase de agua entre sistemas de abastecimiento"}
+CAUDAL_NEED_CATEGORIES = RESOURCE_FLOW_NEED_CATEGORIES | TRANSFER_FLOW_NEED_CATEGORIES
 VOLUMEN_NEED_CATEGORIES = {"mejora en almacenamiento"}
 KM_NEED_CATEGORIES = {"sustitucion de tuberias"}
+NEEDS_CHART_COLORS = (
+    px.colors.qualitative.Bold
+    + px.colors.qualitative.Safe
+    + px.colors.qualitative.Set3
+)
 
 
 def normalize_category_name(value: object) -> str:
@@ -1602,6 +1606,94 @@ def build_needs_summary_table(necesidades: pd.DataFrame, tipo_options: list[str]
         rows.append(row)
     return pd.DataFrame(rows)
 
+
+def build_needs_system_chart(
+    necesidades: pd.DataFrame,
+    title: str,
+    categories: set[str] | None = None,
+    value_col: str | None = None,
+    unit: str = "",
+    count_rows: bool = False,
+    color_map: dict[str, str] | None = None,
+):
+    """Build a clear horizontal chart of needs grouped by water-supply system."""
+    required = ["sistema_de_abastecimiento", "tipo_de_proyecto"]
+    if value_col:
+        required.append(value_col)
+    df = ensure_columns(necesidades, required).copy()
+
+    df["Sistema"] = (
+        df["sistema_de_abastecimiento"]
+        .fillna("")
+        .astype(str)
+        .str.strip()
+        .replace({"": "Sin sistema definido"})
+    )
+    df["_categoria_normalizada"] = df["tipo_de_proyecto"].map(normalize_category_name)
+
+    if categories is not None:
+        df = df[df["_categoria_normalizada"].isin(categories)]
+
+    if df.empty:
+        return None
+
+    if count_rows:
+        grouped = df.groupby("Sistema", as_index=False).size().rename(columns={"size": "Valor"})
+    else:
+        if not value_col:
+            return None
+        df["Valor"] = pd.to_numeric(df[value_col], errors="coerce").fillna(0)
+        grouped = df.groupby("Sistema", as_index=False)["Valor"].sum()
+
+    grouped = grouped[grouped["Valor"] > 0].sort_values("Valor", ascending=True)
+    if grouped.empty:
+        return None
+
+    decimals = 0 if count_rows or unit == "m³" else (2 if unit == "km" else 1)
+    text_template = "%{x:,.0f}" if decimals == 0 else f"%{{x:,.{decimals}f}}"
+
+    fig = px.bar(
+        grouped,
+        x="Valor",
+        y="Sistema",
+        orientation="h",
+        color="Sistema",
+        text="Valor",
+        title=title,
+        color_discrete_map=color_map or {},
+        color_discrete_sequence=NEEDS_CHART_COLORS,
+        labels={"Valor": unit or "Cantidad", "Sistema": "Sistema de abastecimiento"},
+    )
+    fig.update_traces(
+        texttemplate=text_template,
+        textposition="outside",
+        cliponaxis=False,
+        hovertemplate=(
+            "<b>%{y}</b><br>"
+            + (f"{unit}: " if unit else "Cantidad: ")
+            + text_template
+            + "<extra></extra>"
+        ),
+    )
+    fig.update_layout(
+        showlegend=False,
+        height=min(760, max(430, 34 * len(grouped) + 150)),
+        title=dict(x=0.02, xanchor="left", font=dict(size=17)),
+        margin=dict(l=10, r=55, t=80, b=45),
+        plot_bgcolor="white",
+        paper_bgcolor="white",
+        xaxis=dict(
+            title=unit or "Cantidad de iniciativas",
+            showgrid=True,
+            gridcolor="#E8EDF5",
+            zeroline=False,
+        ),
+        yaxis=dict(title=None, automargin=True),
+        hoverlabel=dict(bgcolor="white"),
+    )
+    return fig
+
+
 def vista_necesidades() -> None:
     st.subheader("Vista 3 · Gestión y clasificación de necesidades")
     necesidades = read_table("necesidades")
@@ -1623,47 +1715,71 @@ def vista_necesidades() -> None:
         c2.metric("Sistemas impactados", necesidades.get("sistema_de_abastecimiento", pd.Series(dtype=str)).nunique())
         c3.metric("Tipos de proyecto", necesidades.get("tipo_de_proyecto", pd.Series(dtype=str)).nunique())
         c4.metric("Sin clasificar", int(necesidades.get("responsabilidad_atencion", pd.Series(dtype=str)).astype(str).str.strip().eq("").sum()))
-        g1, g2 = st.columns(2)
-        by_type = (
-            necesidades
-            .groupby("tipo_de_proyecto", dropna=False)
-            .size()
-            .reset_index(name="Cantidad")
-            .rename(columns={"tipo_de_proyecto": "Categoría"})
-            .sort_values("Cantidad", ascending=False)
-        )
-        
-        by_type["Categoría"] = (
-            by_type["Categoría"]
-            .fillna("")
-            .astype(str)
-            .str.strip()
-            .replace({"": "Sin clasificar"})
+        st.markdown("#### Indicadores por sistema de abastecimiento")
+        st.caption(
+            "Los gráficos muestran únicamente valores mayores que cero. "
+            "Los colores de cada sistema se mantienen iguales en todos los indicadores."
         )
 
-        fig_type = px.bar(
-            by_type,
-            x="Cantidad",
-            y="Categoría",
-            orientation="h",
-            color="Categoría",
-            text="Cantidad",
-            title="Cantidad de necesidades por tipo de proyecto",
+        chart_systems = clean_options(
+            necesidades.get("sistema_de_abastecimiento", pd.Series(dtype=str)),
+            extra=["Sin sistema definido"],
         )
+        system_color_map = {
+            system: NEEDS_CHART_COLORS[index % len(NEEDS_CHART_COLORS)]
+            for index, system in enumerate(chart_systems)
+        }
 
-        g1.plotly_chart(add_count_labels(fig_type, "h"), use_container_width=True)
-        by_resp = necesidades.groupby("responsabilidad_atencion", dropna=False).size().reset_index(name="cantidad").sort_values("cantidad", ascending=False)
-        by_resp["responsabilidad_atencion"] = by_resp["responsabilidad_atencion"].replace({"": "Sin clasificar"}).fillna("Sin clasificar")
-        fig_resp = px.bar(
-            by_resp,
-            x="cantidad",
-            y="responsabilidad_atencion",
-            orientation="h",
-            color="responsabilidad_atencion",
-            text="cantidad",
-            title="Clasificación de atención",
-        )
-        g2.plotly_chart(add_count_labels(fig_resp, "h"), use_container_width=True)
+        chart_specs = [
+            {
+                "title": "Caudal por sistema · Aumento de recurso hídrico",
+                "categories": RESOURCE_FLOW_NEED_CATEGORIES,
+                "value_col": "caudal_estimado_lps",
+                "unit": "L/s",
+            },
+            {
+                "title": "Caudal por sistema · Mejora en trasvase",
+                "categories": TRANSFER_FLOW_NEED_CATEGORIES,
+                "value_col": "caudal_estimado_lps",
+                "unit": "L/s",
+            },
+            {
+                "title": "Caudal combinado por sistema · Recurso hídrico + trasvase",
+                "categories": CAUDAL_NEED_CATEGORIES,
+                "value_col": "caudal_estimado_lps",
+                "unit": "L/s",
+            },
+            {
+                "title": "Red por sistema · Sustitución de tuberías",
+                "categories": KM_NEED_CATEGORIES,
+                "value_col": "km_estimado",
+                "unit": "km",
+            },
+            {
+                "title": "Almacenamiento por sistema",
+                "categories": VOLUMEN_NEED_CATEGORIES,
+                "value_col": "volumen_estimado_m3",
+                "unit": "m³",
+            },
+            {
+                "title": "Cantidad total de iniciativas por sistema",
+                "count_rows": True,
+            },
+        ]
+
+        for start in range(0, len(chart_specs), 2):
+            chart_cols = st.columns(2)
+            for chart_col, spec in zip(chart_cols, chart_specs[start:start + 2]):
+                with chart_col:
+                    fig = build_needs_system_chart(
+                        necesidades,
+                        color_map=system_color_map,
+                        **spec,
+                    )
+                    if fig is None:
+                        st.info(f"No hay datos con valores mayores que cero para: {spec['title']}.")
+                    else:
+                        st.plotly_chart(fig, use_container_width=True)
 
         st.markdown("#### Tabla resumen por sistema y categoría")
         st.caption(

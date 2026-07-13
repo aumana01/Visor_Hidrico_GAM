@@ -73,6 +73,14 @@ ESTADO_INICIATIVA_OPTIONS = [
 ]
 ESTUDIO_OPTIONS = ["Sí", "No", "En proceso", "Adquirido", "Adquiridos", "No aplica", "Por definir"]
 ATENCION_NECESIDAD_OPTIONS = ["", "Lo puede atender el GAM", "Se requiere apoyo de otras dependencias","Ambos"]
+COSTO_NECESIDAD_OPTIONS = [
+    "",
+    "Entre ¢0.00 y ¢100,000.00",
+    "Entre ¢100,001.00 y ¢500,000.00",
+    "Entre ¢500,001.00 y ¢1,000,000.00",
+    "Entre ¢1,000,001.00 y ¢5,000,000.00",
+    "Más de ¢5,000,000.00",
+]
 
 NECESIDAD_VISIBLE_COLS = [
     "objetivo_de_la_iniciativa",
@@ -80,6 +88,7 @@ NECESIDAD_VISIBLE_COLS = [
     "tipo_de_proyecto",
     "codigo_de_sistema",
     "sistema_de_abastecimiento",
+    "costo",
     "principal_reto_por_superar",
     "observacion",
     "caudal_estimado_lps",
@@ -94,6 +103,7 @@ NECESIDAD_LABELS = {
     "tipo_de_proyecto": "tipo_de_proyecto",
     "codigo_de_sistema": "Código de Sistema",
     "sistema_de_abastecimiento": "Sistema de Abastecimiento",
+    "costo": "Estimación de costos de la posible alternativa de solución",
     "principal_reto_por_superar": "Principal reto por superar",
     "observacion": "Observación",
     "caudal_estimado_lps": "Caudal estimado que aporta la iniciativa (L/s)",
@@ -452,6 +462,9 @@ def normalize_import_columns(df: pd.DataFrame, target: str) -> pd.DataFrame:
             "tipo_de_proyecto": "tipo_de_proyecto",
             "codigo_de_sistema": "codigo_de_sistema", "codigo_sistema": "codigo_de_sistema", "cod": "codigo_de_sistema",
             "sistema_de_abastecimiento": "sistema_de_abastecimiento", "sistema": "sistema_de_abastecimiento",
+            "costo": "costo", "estimacion_de_costos": "costo",
+            "estimacion_de_costos_de_la_posible_alternativa_de_solucion": "costo",
+            "rangos_de_costos": "costo",
             "principal_reto_por_superar": "principal_reto_por_superar", "principal_reto": "principal_reto_por_superar",
             "observacion": "observacion", "observaciones": "observacion",
             "clasificacion_de_atencion": "responsabilidad_atencion", "responsabilidad_atencion": "responsabilidad_atencion",
@@ -1773,6 +1786,11 @@ def vista_necesidades() -> None:
     tipo_options = clean_options(tipos.iloc[:, 0] if not tipos.empty else pd.Series(dtype=str), necesidades.get("tipo_de_proyecto", pd.Series(dtype=str)))
     sistema_options = clean_options(sistemas.get("sistema_nombre", pd.Series(dtype=str)), necesidades.get("sistema_de_abastecimiento", pd.Series(dtype=str)))
     codigo_options = clean_options(sistemas.get("sistema_codigo", pd.Series(dtype=str)), necesidades.get("codigo_de_sistema", pd.Series(dtype=str)))
+    costo_editor_options = clean_options(
+        necesidades.get("costo", pd.Series(dtype=str)),
+        extra=COSTO_NECESIDAD_OPTIONS,
+        include_blank=True,
+    )
 
     tab_resumen, tab_editor, tab_nueva = st.tabs(["Resumen gráfico", "Tabla editable", "Agregar necesidad"])
     with tab_resumen:
@@ -1872,6 +1890,13 @@ def vista_necesidades() -> None:
             "tipo_de_proyecto": st.column_config.SelectboxColumn(NECESIDAD_LABELS["tipo_de_proyecto"], options=tipo_options, required=False),
             "codigo_de_sistema": st.column_config.SelectboxColumn(NECESIDAD_LABELS["codigo_de_sistema"], options=codigo_options, required=False),
             "sistema_de_abastecimiento": st.column_config.SelectboxColumn(NECESIDAD_LABELS["sistema_de_abastecimiento"], options=sistema_options, required=False),
+            "costo": st.column_config.SelectboxColumn(
+                NECESIDAD_LABELS["costo"],
+                options=costo_editor_options,
+                required=False,
+                width="large",
+                help="Seleccione el rango estimado de costos de la posible alternativa de solución.",
+            ),
             "principal_reto_por_superar": st.column_config.TextColumn(NECESIDAD_LABELS["principal_reto_por_superar"], width="large"),
             "observacion": st.column_config.TextColumn(NECESIDAD_LABELS["observacion"], width="large"),
             "caudal_estimado_lps": st.column_config.NumberColumn(NECESIDAD_LABELS["caudal_estimado_lps"], min_value=0.0, step=1.0, format="%.2f"),
@@ -1914,13 +1939,22 @@ def vista_necesidades() -> None:
             by_name_code, _, _, _ = system_maps(sistemas)
             codigo_sugerido = by_name_code.get(str(sistema), "")
             codigo = col3.selectbox("Código de Sistema", codigo_options, index=option_index(codigo_options, codigo_sugerido)) if codigo_options else col3.text_input("Código de Sistema", value=codigo_sugerido)
+            form_cost, form_attention = st.columns(2)
+            costo = form_cost.selectbox(
+                "Estimación de costos de la posible alternativa de solución",
+                COSTO_NECESIDAD_OPTIONS[1:],
+                help="Rango estimado de costos según la idea de solución.",
+            )
+            responsabilidad = form_attention.selectbox(
+                "Clasificación de atención",
+                ATENCION_NECESIDAD_OPTIONS[1:],
+            )
             reto = st.text_area("Principal reto por superar")
             observacion = st.text_area("Observación")
             q1, q2, q3 = st.columns(3)
             caudal_estimado = q1.number_input("Caudal estimado que aporta la iniciativa (L/s)", min_value=0.0, value=0.0, step=1.0)
             volumen_estimado = q2.number_input("Volumen estimado que aporta la iniciativa (m³)", min_value=0.0, value=0.0, step=10.0)
             km_estimado = q3.number_input("Km estimados que aporta la iniciativa (km)", min_value=0.0, value=0.0, step=0.1)
-            responsabilidad = st.selectbox("Clasificación de atención", ATENCION_NECESIDAD_OPTIONS[1:])
             submitted = st.form_submit_button("Agregar necesidad", type="primary")
             if submitted:
                 new_row = pd.DataFrame(
@@ -1931,6 +1965,7 @@ def vista_necesidades() -> None:
                             "tipo_de_proyecto": tipo,
                             "codigo_de_sistema": codigo,
                             "sistema_de_abastecimiento": sistema,
+                            "costo": costo,
                             "principal_reto_por_superar": reto,
                             "observacion": observacion,
                             "caudal_estimado_lps": caudal_estimado,

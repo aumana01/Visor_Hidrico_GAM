@@ -1,0 +1,9 @@
+.env
+.streamlit/secrets.toml
+data/_local_runtime/
+__pycache__/
+*.pyc
+node_modules/
+.public-map-source/*
+!.public-map-source/README.md
+

@@ -2,6 +2,31 @@
 
 Herramienta para la gestión, análisis y visualización de proyectos relacionados con el acueducto GAM, su impacto en capacidad hídrica y la clasificación de necesidades de inversión.
 
+## Visor público de capacidad hídrica
+
+El repositorio incluye un visor cartográfico estático en `docs/`, preparado para
+publicarse mediante GitHub Pages. Esta versión pública no requiere Streamlit,
+Supabase ni credenciales y presenta únicamente atributos depurados:
+
+- condición deficitaria o superavitaria de los 31 sistemas GAM;
+- clasificación del Índice de Capacidad Hídrica (ICH);
+- coberturas municipales y de ESPH, y ubicaciones de ASADAS;
+- zonas ONA, áreas protegidas y distritos como capas de consulta;
+- mapas base, búsqueda, filtros, dibujo temporal con texto, pin WGS84, medición,
+  importación KML/KMZ y captura JPG.
+
+### Actualización de capas públicas
+
+1. Instalar Node.js 24 y ejecutar `npm install` una vez.
+2. Copiar los archivos fuente actualizados en `.public-map-source/`, siguiendo
+   los nombres indicados en `.public-map-source/README.md`.
+3. Ejecutar `npm run public-map:update`.
+4. Validar con `npm run public-map:check` y revisar visualmente el mapa.
+5. Subir únicamente los archivos depurados de `docs/data/`.
+
+La carpeta de fuentes está excluida de Git para impedir que correos, teléfonos,
+identificadores internos y otros atributos innecesarios se publiquen por error.
+
 ## Vistas incluidas
 
 1. **Gestión de proyectos**

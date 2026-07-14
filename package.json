@@ -1,0 +1,14 @@
+{
+  "name": "visor-hidrico-gam-public-map",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "public-map:update": "node scripts/build-public-map-data.mjs",
+    "public-map:check": "node scripts/check-public-map.mjs"
+  },
+  "devDependencies": {
+    "@turf/simplify": "7.3.5",
+    "xlsx": "0.18.5"
+  }
+}
+

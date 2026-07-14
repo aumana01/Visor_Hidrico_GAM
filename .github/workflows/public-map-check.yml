@@ -1,0 +1,37 @@
+name: Validar visor público
+
+on:
+  pull_request:
+    paths:
+      - "docs/**"
+      - "scripts/**"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/public-map-*.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Descargar repositorio
+        uses: actions/checkout@v7
+
+      - name: Configurar Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Validar datos y archivos públicos
+        run: npm run public-map:check
+
+      - name: Validar JavaScript del visor
+        run: node --check docs/app.js
+

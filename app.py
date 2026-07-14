@@ -13,6 +13,7 @@ import fitz
 import pandas as pd
 import plotly.express as px
 import streamlit as st
+from streamlit_autorefresh import st_autorefresh
 import streamlit.components.v1 as components
 from supabase import create_client
 

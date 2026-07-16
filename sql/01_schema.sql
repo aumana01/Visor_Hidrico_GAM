@@ -74,6 +74,34 @@ create table if not exists public.necesidades (
   updated_at timestamptz default now()
 );
 
+-- Ubicaciones geoespaciales asociadas a necesidades.
+-- Tabla independiente: no modifica ni elimina información de public.necesidades.
+create table if not exists public.necesidades_ubicaciones (
+  id bigserial primary key,
+  necesidad_id bigint not null references public.necesidades(id) on delete cascade,
+  tipo_ubicacion text not null check (
+    tipo_ubicacion in (
+      'Ubicación precisa',
+      'Ubicación general',
+      'Ubicación institucional',
+      'No aplica'
+    )
+  ),
+  latitud double precision,
+  longitud double precision,
+  nombre_ubicacion text,
+  observacion text,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now(),
+  check (
+    tipo_ubicacion = 'No aplica'
+    or (
+      latitud between 8.0 and 12.0
+      and longitud between -86.5 and -82.0
+    )
+  )
+);
+
 
 -- Compatibilidad para proyectos Supabase creados con versiones previas.
 alter table if exists public.necesidades
@@ -128,6 +156,11 @@ create trigger trg_necesidades_updated_at
 before update on public.necesidades
 for each row execute function public.set_updated_at();
 
+drop trigger if exists trg_necesidades_ubicaciones_updated_at on public.necesidades_ubicaciones;
+create trigger trg_necesidades_ubicaciones_updated_at
+before update on public.necesidades_ubicaciones
+for each row execute function public.set_updated_at();
+
 -- Índices para filtros frecuentes.
 create index if not exists idx_proyectos_cluster on public.proyectos(cluster);
 create index if not exists idx_proyectos_sistema on public.proyectos(sistema_nombre);
@@ -136,6 +169,8 @@ create index if not exists idx_capacidad_escenario_cluster_anio on public.capaci
 create index if not exists idx_necesidades_tipo on public.necesidades(tipo_de_proyecto);
 create index if not exists idx_necesidades_sistema on public.necesidades(sistema_de_abastecimiento);
 create index if not exists idx_necesidades_responsabilidad on public.necesidades(responsabilidad_atencion);
+create index if not exists idx_necesidades_ubicaciones_necesidad on public.necesidades_ubicaciones(necesidad_id);
+create index if not exists idx_necesidades_ubicaciones_tipo on public.necesidades_ubicaciones(tipo_ubicacion);
 
 -- Seguridad / RLS:
 -- Para una app institucional privada, lo más simple es usar una SERVICE_ROLE_KEY solo en secrets de Streamlit.

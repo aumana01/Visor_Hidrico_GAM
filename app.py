@@ -18,6 +18,7 @@ import streamlit.components.v1 as components
 from supabase import create_client
 
 from database import delete_rows, is_supabase_enabled, read_table, reset_local_runtime, seed_supabase, upsert_rows
+from geo_necesidades import vista_mapa_necesidades
 
 AYA_AZUL = "#002B5C"
 AYA_DORADO = "#C9A227"
@@ -2443,6 +2444,7 @@ def main() -> None:
             "2. Capacidad hídrica GAM",
             "3. Necesidades de inversión",
             "4. Lecciones aprendidas",
+            "5. Mapa de necesidades",
         ],
     )
 
@@ -2452,8 +2454,10 @@ def main() -> None:
         vista_capacidad()
     elif view.startswith("3"):
         vista_necesidades()
-    else:
+    elif view.startswith("4"):
         vista_lecciones()
+    else:
+        vista_mapa_necesidades()
 
 
 if __name__ == "__main__":

@@ -22,6 +22,7 @@ LOCAL_DIR.mkdir(exist_ok=True)
 
 TABLE_FILES: dict[str, str] = {
     "proyectos": "proyectos_seed.csv",
+    "necesidades_ubicaciones": "necesidades_ubicaciones_seed.csv",
     "sistemas_clusters": "sistemas_clusters.csv",
     "capacidad_base": "capacidad_base_seed.csv",
     "necesidades": "necesidades_seed.csv",
@@ -32,7 +33,7 @@ TABLE_FILES: dict[str, str] = {
     "catalogo_situacion_terrenos": "catalogo_situacion_terrenos.csv",
 }
 
-ID_TABLES = {"proyectos", "necesidades"}
+ID_TABLES = {"proyectos", "necesidades", "necesidades_ubicaciones"}
 
 
 def _get_secret(name: str, default: str | None = None) -> str | None:
@@ -375,6 +376,7 @@ def seed_supabase(overwrite: bool = False) -> dict[str, int]:
         "catalogo_situacion_terrenos",
         "proyectos",
         "necesidades",
+        "necesidades_ubicaciones",
     ]
 
     for table in ordered_tables:

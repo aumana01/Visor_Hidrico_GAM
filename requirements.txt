@@ -9,3 +9,5 @@ supabase>=2.7
 PyMuPDF>=1.24.0
 pydeck>=0.9
 streamlit-autorefresh
+folium>=0.17
+streamlit-folium>=0.23

@@ -543,6 +543,7 @@ def render_editor(needs: pd.DataFrame, locations: pd.DataFrame) -> None:
             "sistema_de_abastecimiento",
             "codigo_de_sistema",
             "tipo_de_proyecto",
+            "observacion",
         ],
     )
     valid_needs = needs[pd.to_numeric(needs["id"], errors="coerce").notna()].copy()
@@ -551,12 +552,58 @@ def render_editor(needs: pd.DataFrame, locations: pd.DataFrame) -> None:
         st.info("No hay necesidades con ID disponible.")
         return
 
+    georeferenced_ids: set[int] = set()
+    if not locations.empty:
+        valid_pin_mask = locations.apply(
+            lambda row: valid_lat_lon(row.get("latitud"), row.get("longitud")),
+            axis=1,
+        )
+        georeferenced_ids = set(
+            pd.to_numeric(
+                locations.loc[valid_pin_mask, "necesidad_id"],
+                errors="coerce",
+            )
+            .dropna()
+            .astype(int)
+        )
+
+    all_need_ids = set(valid_needs["id"].astype(int))
+    status_labels = {
+        "Todas": f"Todas ({len(all_need_ids)})",
+        "Con georreferencia": f"Con georreferencia ({len(all_need_ids & georeferenced_ids)})",
+        "Sin georreferencia": f"Sin georreferencia ({len(all_need_ids - georeferenced_ids)})",
+    }
+    georeference_status = st.selectbox(
+        "Estado de georreferenciación",
+        options=list(status_labels),
+        format_func=lambda value: status_labels[value],
+        key="geo_editor_status_filter",
+    )
+    st.caption(
+        "Con georreferencia: posee al menos un pin con coordenadas válidas. "
+        "No aplica se clasifica como sin georreferencia."
+    )
+
+    filtered_valid_needs = valid_needs.copy()
+    if georeference_status == "Con georreferencia":
+        filtered_valid_needs = filtered_valid_needs[
+            filtered_valid_needs["id"].isin(georeferenced_ids)
+        ]
+    elif georeference_status == "Sin georreferencia":
+        filtered_valid_needs = filtered_valid_needs[
+            ~filtered_valid_needs["id"].isin(georeferenced_ids)
+        ]
+
+    if filtered_valid_needs.empty:
+        st.info("No hay necesidades que coincidan con el estado seleccionado.")
+        return
+
     labels = {
         int(row["id"]): (
             f"{int(row['id'])} · {need_title(row)} · "
             f"{safe_text(row.get('sistema_de_abastecimiento'), 'Sin sistema')}"
         )
-        for _, row in valid_needs.iterrows()
+        for _, row in filtered_valid_needs.iterrows()
     }
     need_id = st.selectbox(
         "Necesidad o iniciativa",
@@ -564,13 +611,7 @@ def render_editor(needs: pd.DataFrame, locations: pd.DataFrame) -> None:
         format_func=lambda value: labels[value],
         key="geo_selected_need",
     )
-    need = selected_need_row(valid_needs, int(need_id))
-    st.info(
-        f"**Sistema asociado:** {safe_text(need.get('sistema_de_abastecimiento'))}  |  "
-        f"**Código:** {safe_text(need.get('codigo_de_sistema'))}  |  "
-        f"**Tipo:** {safe_text(need.get('tipo_de_proyecto'))}"
-    )
-
+    need = selected_need_row(filtered_valid_needs, int(need_id))
     current_locations = (
         locations[
             pd.to_numeric(locations.get("necesidad_id"), errors="coerce").eq(int(need_id))
@@ -578,6 +619,30 @@ def render_editor(needs: pd.DataFrame, locations: pd.DataFrame) -> None:
         if not locations.empty
         else locations.copy()
     )
+    pin_count = (
+        int(
+            current_locations.apply(
+                lambda row: valid_lat_lon(row.get("latitud"), row.get("longitud")),
+                axis=1,
+            ).sum()
+        )
+        if not current_locations.empty
+        else 0
+    )
+    georeference_label = "Con georreferencia" if pin_count else "Sin georreferencia"
+    st.info(
+        f"**Sistema asociado:** {safe_text(need.get('sistema_de_abastecimiento'))}  |  "
+        f"**Código:** {safe_text(need.get('codigo_de_sistema'))}  |  "
+        f"**Tipo:** {safe_text(need.get('tipo_de_proyecto'))}  |  "
+        f"**Estado:** {georeference_label}  |  **Pines:** {pin_count}"
+    )
+
+    with st.expander("Descripción o detalle de la necesidad", expanded=True):
+        st.write(safe_text(need.get("breve_descripcion"), "No se ha registrado una descripción."))
+        observation = safe_text(need.get("observacion"), "")
+        if observation:
+            st.markdown("**Observación:**")
+            st.write(observation)
     map_object = build_map(
         valid_needs[pd.to_numeric(valid_needs["id"], errors="coerce").eq(int(need_id))],
         current_locations,

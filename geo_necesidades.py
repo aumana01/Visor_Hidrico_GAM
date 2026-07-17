@@ -576,11 +576,13 @@ def category_pie_chart(needs: pd.DataFrame):
     )
     if category_data.empty:
         return None
+
+    total_initiatives = int(category_data["Cantidad"].sum())
     figure = px.pie(
         category_data,
         names="Categoría",
         values="Cantidad",
-        hole=0.36,
+        hole=0.28,
         color="Categoría",
         color_discrete_sequence=(
             px.colors.qualitative.Bold
@@ -590,21 +592,39 @@ def category_pie_chart(needs: pd.DataFrame):
         title="Cantidad de iniciativas por categoría",
     )
     figure.update_traces(
+        domain=dict(x=[0.04, 0.96], y=[0.35, 0.98]),
         textposition="inside",
-        textinfo="percent",
+        texttemplate="%{percent:.1%}",
         hovertemplate="<b>%{label}</b><br>Iniciativas: %{value}<br>Porcentaje: %{percent}<extra></extra>",
-        marker=dict(line=dict(color="white", width=1.5)),
+        marker=dict(line=dict(color="white", width=1.8)),
+        sort=True,
+    )
+    figure.add_annotation(
+        x=0.5,
+        y=0.665,
+        text=f"<b>{total_initiatives}</b><br><span style='font-size:12px'>iniciativas</span>",
+        showarrow=False,
+        align="center",
+        font=dict(size=22, color="#002B5C"),
     )
     figure.update_layout(
         height=700,
         showlegend=True,
-        title=dict(x=0.02, font=dict(size=17)),
+        title=dict(x=0.5, xanchor="center", font=dict(size=18)),
         legend=dict(
-            orientation="v",
+            orientation="h",
+            x=0.5,
+            xanchor="center",
+            y=0.24,
+            yanchor="top",
             title=None,
-            font=dict(size=11),
+            font=dict(size=10),
+            entrywidth=145,
+            entrywidthmode="pixels",
         ),
-        margin=dict(l=10, r=10, t=75, b=10),
+        uniformtext_minsize=9,
+        uniformtext_mode="hide",
+        margin=dict(l=5, r=5, t=65, b=5),
         paper_bgcolor="white",
     )
     return figure
@@ -702,7 +722,7 @@ def render_consultation(needs: pd.DataFrame, locations: pd.DataFrame) -> None:
         selected_codes=selected_codes,
         include_infrastructure=include_infrastructure,
     )
-    map_column, chart_column = st.columns([3.2, 1.25])
+    map_column, chart_column = st.columns([2.2, 1.25])
     with map_column:
         st.markdown("#### Localización geoespacial")
         st_folium(
@@ -1020,7 +1040,7 @@ def render_editor(needs: pd.DataFrame, locations: pd.DataFrame) -> None:
 
 
 def vista_mapa_necesidades() -> None:
-    st.subheader("Vista 5 · Mapa de necesidades e iniciativas")
+    st.subheader("Vista 4 · Mapa de necesidades e iniciativas")
     st.caption(
         "Herramienta para análisis, ordenamiento, georreferenciación y consulta sencilla "
         "de necesidades e iniciativas de los sistemas GAM."

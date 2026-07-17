@@ -2258,7 +2258,7 @@ def format_file_size(size: object) -> str:
 
 
 def vista_lecciones() -> None:
-    st.subheader("Vista 4 · Lecciones aprendidas y experiencias realizadas")
+    st.subheader("Vista 5 · Lecciones aprendidas y experiencias realizadas")
     st.caption(
         "Repositorio institucional de PDFs almacenado en Supabase Storage. "
         "Desde esta vista se pueden cargar, visualizar, descargar y eliminar archivos."
@@ -2443,8 +2443,8 @@ def main() -> None:
             "1. Gestión de proyectos",
             "2. Capacidad hídrica GAM",
             "3. Necesidades de inversión",
-            "4. Lecciones aprendidas",
-            "5. Mapa de necesidades",
+            "4. Mapa de necesidades",
+            "5. Lecciones aprendidas",
         ],
     )
 
@@ -2455,9 +2455,9 @@ def main() -> None:
     elif view.startswith("3"):
         vista_necesidades()
     elif view.startswith("4"):
-        vista_lecciones()
-    else:
         vista_mapa_necesidades()
+    else:
+        vista_lecciones()
 
 
 if __name__ == "__main__":

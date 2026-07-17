@@ -4,11 +4,13 @@ import colorsys
 import hashlib
 import html
 import json
+import unicodedata
 from pathlib import Path
 from typing import Any, Iterable
 
 import folium
 import pandas as pd
+import plotly.express as px
 import streamlit as st
 from branca.element import Element
 from streamlit_folium import st_folium
@@ -396,45 +398,216 @@ def build_map(
     return map_object
 
 
-def location_summary(needs: pd.DataFrame, locations: pd.DataFrame) -> pd.DataFrame:
-    needs = ensure_columns(
-        needs,
-        ["id", "objetivo_de_la_iniciativa", "breve_descripcion", "sistema_de_abastecimiento", "tipo_de_proyecto"],
-    )
-    locations = ensure_columns(locations, ["necesidad_id", "tipo_ubicacion", "latitud", "longitud"])
-    if locations.empty:
-        counts = pd.DataFrame(columns=["necesidad_id", "Ubicaciones", "Pines", "Tipos de ubicación"])
-    else:
-        work = locations.copy()
-        work["_pin"] = work.apply(lambda row: int(valid_lat_lon(row.get("latitud"), row.get("longitud"))), axis=1)
-        counts = (
-            work.groupby("necesidad_id", as_index=False)
+def normalize_category(value: object) -> str:
+    text = safe_text(value, "").lower()
+    return "".join(
+        character
+        for character in unicodedata.normalize("NFD", text)
+        if unicodedata.category(character) != "Mn"
+    ).strip()
+
+
+def initiative_measure(row: pd.Series) -> tuple[float | None, str]:
+    category = normalize_category(row.get("tipo_de_proyecto"))
+    if "trasvase" in category or "recurso hidrico" in category:
+        value = pd.to_numeric(row.get("caudal_estimado_lps"), errors="coerce")
+        return (float(value), "L/s") if pd.notna(value) and float(value) > 0 else (None, "L/s")
+    if "sustitucion de tuberias" in category:
+        value = pd.to_numeric(row.get("km_estimado"), errors="coerce")
+        return (float(value), "km") if pd.notna(value) and float(value) > 0 else (None, "km")
+    if "almacenamiento" in category:
+        value = pd.to_numeric(row.get("volumen_estimado_m3"), errors="coerce")
+        return (float(value), "m³") if pd.notna(value) and float(value) > 0 else (None, "m³")
+    return None, ""
+
+
+def coordinate_text(values: Iterable[object]) -> str:
+    coordinates: list[str] = []
+    for value in values:
+        numeric = pd.to_numeric(value, errors="coerce")
+        if pd.notna(numeric):
+            text = f"{float(numeric):.6f}"
+            if text not in coordinates:
+                coordinates.append(text)
+    return "; ".join(coordinates)
+
+
+def consultation_table(needs: pd.DataFrame, locations: pd.DataFrame) -> pd.DataFrame:
+    need_columns = [
+        "id",
+        "objetivo_de_la_iniciativa",
+        "breve_descripcion",
+        "tipo_de_proyecto",
+        "sistema_de_abastecimiento",
+        "costo",
+        "caudal_estimado_lps",
+        "volumen_estimado_m3",
+        "km_estimado",
+    ]
+    work = ensure_columns(needs, need_columns).copy()
+    locations = ensure_columns(locations, ["id", "necesidad_id", "latitud", "longitud"])
+    valid_locations = locations[
+        locations.apply(
+            lambda row: valid_lat_lon(row.get("latitud"), row.get("longitud")),
+            axis=1,
+        )
+    ].copy()
+    if not valid_locations.empty:
+        if "id" in valid_locations.columns:
+            valid_locations = valid_locations.sort_values("id")
+        coordinates = (
+            valid_locations.groupby("necesidad_id", as_index=False)
             .agg(
-                Ubicaciones=("necesidad_id", "size"),
-                Pines=("_pin", "sum"),
-                **{"Tipos de ubicación": ("tipo_ubicacion", lambda values: "; ".join(clean_options(values)))},
+                Latitud=("latitud", coordinate_text),
+                Longitud=("longitud", coordinate_text),
             )
         )
-    summary = needs.merge(counts, left_on="id", right_on="necesidad_id", how="left")
-    summary["Necesidad / iniciativa"] = summary.apply(need_title, axis=1)
-    summary["Ubicaciones"] = summary["Ubicaciones"].fillna(0).astype(int)
-    summary["Pines"] = summary["Pines"].fillna(0).astype(int)
-    summary["Tipos de ubicación"] = summary["Tipos de ubicación"].fillna("Pendiente de clasificar")
-    return summary[
+        work = work.merge(
+            coordinates,
+            left_on="id",
+            right_on="necesidad_id",
+            how="left",
+        )
+    else:
+        work["Latitud"] = ""
+        work["Longitud"] = ""
+
+    measures = work.apply(initiative_measure, axis=1)
+    work["Valor estimado"] = [
+        "" if value is None else f"{value:,.2f}"
+        for value, _ in measures
+    ]
+    work["Unidad medible"] = [unit for _, unit in measures]
+    work["Nombre de la iniciativa"] = work.apply(need_title, axis=1)
+    work["Descripción"] = work["breve_descripcion"].map(
+        lambda value: safe_text(value, "Sin descripción registrada")
+    )
+    work["Latitud"] = work["Latitud"].fillna("")
+    work["Longitud"] = work["Longitud"].fillna("")
+    work["Costo"] = work["costo"].map(lambda value: safe_text(value, "Sin estimar"))
+    table = work[
         [
-            "Necesidad / iniciativa",
-            "sistema_de_abastecimiento",
+            "Nombre de la iniciativa",
+            "Descripción",
+            "Valor estimado",
+            "Unidad medible",
             "tipo_de_proyecto",
-            "Ubicaciones",
-            "Pines",
-            "Tipos de ubicación",
+            "sistema_de_abastecimiento",
+            "Costo",
+            "Latitud",
+            "Longitud",
         ]
     ].rename(
         columns={
-            "sistema_de_abastecimiento": "Sistema",
-            "tipo_de_proyecto": "Tipo de necesidad",
+            "tipo_de_proyecto": "Categoría",
+            "sistema_de_abastecimiento": "Sistema de abastecimiento",
         }
     )
+    return table.sort_values(
+        ["Sistema de abastecimiento", "Categoría", "Nombre de la iniciativa"],
+        na_position="last",
+    )
+
+
+def numeric_sum(series: pd.Series) -> float:
+    return float(pd.to_numeric(series, errors="coerce").fillna(0).sum())
+
+
+def executive_need_metrics(needs: pd.DataFrame) -> dict[str, float]:
+    work = ensure_columns(
+        needs,
+        [
+            "tipo_de_proyecto",
+            "caudal_estimado_lps",
+            "km_estimado",
+            "volumen_estimado_m3",
+        ],
+    ).copy()
+    work["_category"] = work["tipo_de_proyecto"].map(normalize_category)
+    transfer_mask = work["_category"].str.contains("trasvase", na=False)
+    production_mask = work["_category"].str.contains("recurso hidrico", na=False)
+    return {
+        "total_flow": numeric_sum(work["caudal_estimado_lps"]),
+        "count": float(len(work)),
+        "transfer_flow": numeric_sum(work.loc[transfer_mask, "caudal_estimado_lps"]),
+        "production_flow": numeric_sum(work.loc[production_mask, "caudal_estimado_lps"]),
+        "network_km": numeric_sum(work["km_estimado"]),
+        "storage_m3": numeric_sum(work["volumen_estimado_m3"]),
+    }
+
+
+def render_executive_metrics(needs: pd.DataFrame) -> None:
+    metrics = executive_need_metrics(needs)
+    st.markdown(
+        """
+        <style>
+        div[data-testid="stMetric"]{min-height:112px;}
+        div[data-testid="stMetricValue"]{font-size:1.65rem;}
+        div[data-testid="stMetricLabel"]{font-size:.94rem;font-weight:650;}
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+    columns = st.columns(6)
+    columns[0].metric("Caudal total de necesidad", f"{metrics['total_flow']:,.1f} L/s")
+    columns[1].metric("Cantidad total de necesidades", f"{int(metrics['count']):,}")
+    columns[2].metric("Caudal por trasvase", f"{metrics['transfer_flow']:,.1f} L/s")
+    columns[3].metric("Aumento de producción", f"{metrics['production_flow']:,.1f} L/s")
+    columns[4].metric("Red adicional estimada", f"{metrics['network_km']:,.2f} km")
+    columns[5].metric("Volumen estimado", f"{metrics['storage_m3']:,.0f} m³")
+
+
+def category_pie_chart(needs: pd.DataFrame):
+    category_data = (
+        ensure_columns(needs, ["tipo_de_proyecto"])
+        .assign(
+            Categoría=lambda frame: (
+                frame["tipo_de_proyecto"]
+                .fillna("")
+                .astype(str)
+                .str.strip()
+                .replace({"": "Sin categoría"})
+            )
+        )
+        .groupby("Categoría", as_index=False)
+        .size()
+        .rename(columns={"size": "Cantidad"})
+        .sort_values("Cantidad", ascending=False)
+    )
+    if category_data.empty:
+        return None
+    figure = px.pie(
+        category_data,
+        names="Categoría",
+        values="Cantidad",
+        hole=0.36,
+        color="Categoría",
+        color_discrete_sequence=(
+            px.colors.qualitative.Bold
+            + px.colors.qualitative.Safe
+            + px.colors.qualitative.Set3
+        ),
+        title="Cantidad de iniciativas por categoría",
+    )
+    figure.update_traces(
+        textposition="inside",
+        textinfo="percent",
+        hovertemplate="<b>%{label}</b><br>Iniciativas: %{value}<br>Porcentaje: %{percent}<extra></extra>",
+        marker=dict(line=dict(color="white", width=1.5)),
+    )
+    figure.update_layout(
+        height=700,
+        showlegend=True,
+        title=dict(x=0.02, font=dict(size=17)),
+        legend=dict(
+            orientation="v",
+            title=None,
+            font=dict(size=11),
+        ),
+        margin=dict(l=10, r=10, t=75, b=10),
+        paper_bgcolor="white",
+    )
+    return figure
 
 
 def render_consultation(needs: pd.DataFrame, locations: pd.DataFrame) -> None:
@@ -468,59 +641,83 @@ def render_consultation(needs: pd.DataFrame, locations: pd.DataFrame) -> None:
         filtered_needs = filtered_needs[
             filtered_needs["tipo_de_proyecto"].astype(str).isin(selected_types)
         ]
-    need_ids = set(pd.to_numeric(filtered_needs.get("id"), errors="coerce").dropna().astype(int))
-    filtered_locations = locations[
-        pd.to_numeric(locations.get("necesidad_id"), errors="coerce").isin(need_ids)
-    ].copy() if not locations.empty else locations.copy()
-    if selected_location_types and not filtered_locations.empty:
+
+    need_ids = set(
+        pd.to_numeric(filtered_needs.get("id"), errors="coerce").dropna().astype(int)
+    )
+    filtered_locations = (
+        locations[
+            pd.to_numeric(locations.get("necesidad_id"), errors="coerce").isin(need_ids)
+        ].copy()
+        if not locations.empty
+        else locations.copy()
+    )
+    if selected_location_types:
         filtered_locations = filtered_locations[
             filtered_locations["tipo_ubicacion"].astype(str).isin(selected_location_types)
         ]
+        matched_need_ids = set(
+            pd.to_numeric(
+                filtered_locations.get("necesidad_id"),
+                errors="coerce",
+            )
+            .dropna()
+            .astype(int)
+        )
+        filtered_needs = filtered_needs[
+            pd.to_numeric(filtered_needs["id"], errors="coerce").isin(matched_need_ids)
+        ]
 
-    location_need_ids = set(
-        pd.to_numeric(locations.get("necesidad_id"), errors="coerce").dropna().astype(int)
-    ) if not locations.empty else set()
-    georeferenced_need_ids = set(
-        pd.to_numeric(
-            locations[
-                locations.apply(lambda row: valid_lat_lon(row.get("latitud"), row.get("longitud")), axis=1)
-            ].get("necesidad_id"),
-            errors="coerce",
-        ).dropna().astype(int)
-    ) if not locations.empty else set()
-    no_apply_ids = set(
-        pd.to_numeric(
-            locations[locations.get("tipo_ubicacion", pd.Series(dtype=str)).astype(str).eq("No aplica")].get("necesidad_id"),
-            errors="coerce",
-        ).dropna().astype(int)
-    ) if not locations.empty else set()
+    st.markdown("#### Detalle descriptivo de necesidades e iniciativas")
+    detail_table = consultation_table(filtered_needs, filtered_locations)
+    st.dataframe(
+        detail_table,
+        use_container_width=True,
+        hide_index=True,
+        height=420,
+        column_config={
+            "Nombre de la iniciativa": st.column_config.TextColumn(width="large"),
+            "Descripción": st.column_config.TextColumn(width="large"),
+            "Valor estimado": st.column_config.TextColumn(width="small"),
+            "Unidad medible": st.column_config.TextColumn(width="small"),
+            "Categoría": st.column_config.TextColumn(width="medium"),
+            "Sistema de abastecimiento": st.column_config.TextColumn(width="medium"),
+            "Costo": st.column_config.TextColumn(width="large"),
+            "Latitud": st.column_config.TextColumn(width="medium"),
+            "Longitud": st.column_config.TextColumn(width="medium"),
+        },
+    )
 
-    metric_a, metric_b, metric_c, metric_d = st.columns(4)
-    metric_a.metric("Necesidades filtradas", len(filtered_needs))
-    metric_b.metric("Con pines", len(need_ids & georeferenced_need_ids))
-    metric_c.metric("No aplica", len(need_ids & no_apply_ids))
-    metric_d.metric("Pendientes de ubicar", len(need_ids - location_need_ids))
+    st.markdown("#### Indicadores consolidados")
+    render_executive_metrics(filtered_needs)
 
-    selected_codes = clean_options(
-        filtered_needs.get("codigo_de_sistema", pd.Series(dtype=str))
-    ) if selected_systems else []
+    selected_codes = (
+        clean_options(filtered_needs.get("codigo_de_sistema", pd.Series(dtype=str)))
+        if selected_systems
+        else []
+    )
     map_object = build_map(
         filtered_needs,
         filtered_locations,
         selected_codes=selected_codes,
         include_infrastructure=include_infrastructure,
     )
-    st_folium(
-        map_object,
-        height=760,
-        use_container_width=True,
-        returned_objects=[],
-        key="needs_consultation_map",
-    )
-
-    with st.expander("Detalle ordenado de necesidades", expanded=False):
-        summary = location_summary(filtered_needs, filtered_locations)
-        st.dataframe(summary, use_container_width=True, hide_index=True, height=420)
+    map_column, chart_column = st.columns([3.2, 1.25])
+    with map_column:
+        st.markdown("#### Localización geoespacial")
+        st_folium(
+            map_object,
+            height=700,
+            use_container_width=True,
+            returned_objects=[],
+            key="needs_consultation_map",
+        )
+    with chart_column:
+        figure = category_pie_chart(filtered_needs)
+        if figure is None:
+            st.info("No hay iniciativas para construir el gráfico por categoría.")
+        else:
+            st.plotly_chart(figure, use_container_width=True)
 
 
 def selected_need_row(needs: pd.DataFrame, need_id: int) -> pd.Series:

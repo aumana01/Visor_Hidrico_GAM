@@ -17,7 +17,16 @@ from streamlit_autorefresh import st_autorefresh
 import streamlit.components.v1 as components
 from supabase import create_client
 
-from database import delete_rows, is_supabase_enabled, read_table, reset_local_runtime, seed_supabase, upsert_rows
+from database import (
+    delete_rows,
+    is_supabase_enabled,
+    read_table,
+    read_optional_table,
+    replace_need_systems,
+    reset_local_runtime,
+    seed_supabase,
+    upsert_rows,
+)
 from geo_necesidades import vista_mapa_necesidades
 
 AYA_AZUL = "#002B5C"
@@ -112,7 +121,24 @@ NECESIDAD_LABELS = {
     "volumen_estimado_m3": "Volumen estimado que aporta la iniciativa (m³)",
     "km_estimado": "Km estimados que aporta la iniciativa (km)",
     "responsabilidad_atencion": "Clasificación de atención",
+    "sistemas_asociados": "Sistemas de abastecimiento asociados",
+    "codigos_asociados": "Códigos asignados automáticamente",
 }
+
+NECESIDAD_EDITOR_COLS = [
+    "objetivo_de_la_iniciativa",
+    "breve_descripcion",
+    "tipo_de_proyecto",
+    "sistemas_asociados",
+    "codigos_asociados",
+    "costo",
+    "principal_reto_por_superar",
+    "observacion",
+    "caudal_estimado_lps",
+    "volumen_estimado_m3",
+    "km_estimado",
+    "responsabilidad_atencion",
+]
 
 st.set_page_config(
     page_title="GAM Hídrico | Proyectos y Necesidades",
@@ -510,7 +536,17 @@ def xlsx_importer(table: str, target: str, sistemas: pd.DataFrame, key: str) -> 
             st.write("Vista previa de importación")
             st.dataframe(imported.head(20), use_container_width=True, hide_index=True)
             if st.button(f"Importar {len(imported)} registros", type="primary", key=f"{key}_import_btn"):
-                upsert_rows(table, imported)
+                saved_import = upsert_rows(table, imported)
+                if target == "necesidades":
+                    for _, imported_row in saved_import.iterrows():
+                        replace_need_systems(
+                            int(imported_row["id"]),
+                            split_system_selection(
+                                imported_row.get("sistemas_asociados")
+                                or imported_row.get("sistema_de_abastecimiento")
+                            ),
+                            sistemas,
+                        )
                 st.success(f"Se importaron/actualizaron {len(imported)} registros en {table}.")
                 st.rerun()
         except Exception as exc:
@@ -584,17 +620,130 @@ def get_actividades_criticas_options(catalogo_act: pd.DataFrame) -> list[str]:
     return clean_options(catalogo_act.iloc[:, 0], include_blank=False)
 
 
+def split_system_selection(value: object) -> list[str]:
+    """Normalize a multiselect/list or legacy semicolon-separated system value."""
+    if isinstance(value, (list, tuple, set)):
+        raw_values = list(value)
+    elif value is None or pd.isna(value):
+        raw_values = []
+    else:
+        raw_values = str(value).split(";")
+
+    names: list[str] = []
+    for raw_value in raw_values:
+        name = str(raw_value).strip()
+        if name and name.lower() not in {"nan", "none", "<na>"} and name not in names:
+            names.append(name)
+    return names
+
+
+def system_codes_for_names(system_names: Iterable[object], sistemas: pd.DataFrame) -> list[str]:
+    by_name_code, _, _, _ = system_maps(sistemas)
+    codes: list[str] = []
+    for name in split_system_selection(list(system_names)):
+        code = str(by_name_code.get(name, "")).strip()
+        if code and code not in codes:
+            codes.append(code)
+    return codes
+
+
+def attach_need_systems(
+    needs: pd.DataFrame,
+    relations: pd.DataFrame,
+    sistemas: pd.DataFrame,
+) -> pd.DataFrame:
+    """Attach canonical multi-system lists while retaining legacy text columns."""
+    out = ensure_columns(needs, ["id", *NECESIDAD_VISIBLE_COLS]).copy()
+    relation_map: dict[int, list[str]] = {}
+
+    if not relations.empty:
+        work = ensure_columns(
+            relations,
+            ["necesidad_id", "sistema_nombre", "sistema_codigo"],
+        )
+        work["necesidad_id"] = pd.to_numeric(work["necesidad_id"], errors="coerce")
+        work = work[work["necesidad_id"].notna()].copy()
+        for need_id, group in work.groupby("necesidad_id", sort=False):
+            relation_map[int(need_id)] = split_system_selection(
+                group["sistema_nombre"].astype(str).tolist()
+            )
+
+    associated: list[list[str]] = []
+    code_texts: list[str] = []
+    for _, row in out.iterrows():
+        raw_id = pd.to_numeric(row.get("id"), errors="coerce")
+        names = relation_map.get(int(raw_id), []) if pd.notna(raw_id) else []
+        if not names:
+            names = split_system_selection(row.get("sistema_de_abastecimiento"))
+        if not names:
+            _, _, by_code_name, _ = system_maps(sistemas)
+            names = [
+                by_code_name[code]
+                for code in split_system_selection(row.get("codigo_de_sistema"))
+                if code in by_code_name
+            ]
+        codes = system_codes_for_names(names, sistemas)
+        associated.append(names)
+        code_texts.append("; ".join(codes))
+        out.at[row.name, "sistema_de_abastecimiento"] = "; ".join(names)
+        out.at[row.name, "codigo_de_sistema"] = "; ".join(codes)
+
+    out["sistemas_asociados"] = associated
+    out["codigos_asociados"] = code_texts
+    return out
+
+
+def expand_needs_by_system(needs: pd.DataFrame, sistemas: pd.DataFrame) -> pd.DataFrame:
+    """Create one analytical row per need-system relationship."""
+    if needs.empty:
+        return needs.copy()
+
+    expanded = needs.copy()
+    if "sistemas_asociados" not in expanded.columns:
+        expanded["sistemas_asociados"] = expanded.get(
+            "sistema_de_abastecimiento",
+            pd.Series(index=expanded.index, dtype=object),
+        ).apply(split_system_selection)
+    expanded["sistemas_asociados"] = expanded["sistemas_asociados"].apply(
+        split_system_selection
+    )
+    expanded["_sistema_analitico"] = expanded["sistemas_asociados"].apply(
+        lambda values: values if values else ["Sin sistema definido"]
+    )
+    expanded = expanded.explode("_sistema_analitico", ignore_index=True)
+    by_name_code, _, _, _ = system_maps(sistemas)
+    expanded["sistema_de_abastecimiento"] = expanded["_sistema_analitico"]
+    expanded["codigo_de_sistema"] = expanded["_sistema_analitico"].map(
+        by_name_code
+    ).fillna("")
+    return expanded.drop(columns=["_sistema_analitico"])
+
+
 def normalize_need_rows(df: pd.DataFrame, sistemas: pd.DataFrame) -> pd.DataFrame:
-    out = ensure_columns(df, NECESIDAD_VISIBLE_COLS)
-    by_name_code, _, by_code_name, _ = system_maps(sistemas)
-    if "sistema_de_abastecimiento" in out.columns and "codigo_de_sistema" in out.columns:
-        names = out["sistema_de_abastecimiento"].astype(str)
-        mapped_code = names.map(by_name_code)
-        out.loc[mapped_code.notna(), "codigo_de_sistema"] = mapped_code[mapped_code.notna()]
-        codes = out["codigo_de_sistema"].astype(str)
-        mapped_name = codes.map(by_code_name)
-        empty_name = out["sistema_de_abastecimiento"].astype(str).str.strip().eq("")
-        out.loc[mapped_name.notna() & empty_name, "sistema_de_abastecimiento"] = mapped_name[mapped_name.notna() & empty_name]
+    out = ensure_columns(df, NECESIDAD_VISIBLE_COLS).copy()
+    _, _, by_code_name, _ = system_maps(sistemas)
+
+    for idx, row in out.iterrows():
+        if "sistemas_asociados" in out.columns:
+            names = split_system_selection(row.get("sistemas_asociados"))
+        else:
+            names = split_system_selection(row.get("sistema_de_abastecimiento"))
+
+        if not names:
+            names = [
+                by_code_name[code]
+                for code in split_system_selection(row.get("codigo_de_sistema"))
+                if code in by_code_name
+            ]
+
+        codes = system_codes_for_names(names, sistemas)
+        out.at[idx, "sistema_de_abastecimiento"] = "; ".join(names)
+        out.at[idx, "codigo_de_sistema"] = "; ".join(codes)
+        if "sistemas_asociados" in out.columns:
+            out.at[idx, "sistemas_asociados"] = names
+        if "codigos_asociados" in out.columns:
+            out.at[idx, "codigos_asociados"] = "; ".join(codes)
+
     return out
 
 
@@ -1778,6 +1927,7 @@ def build_needs_system_chart(
 def vista_necesidades() -> None:
     st.subheader("Vista 3 · Gestión y clasificación de necesidades")
     necesidades = read_table("necesidades")
+    necesidades_sistemas = read_optional_table("necesidades_sistemas")
     tipos = read_table("catalogo_tipos_proyecto")
     sistemas = read_table("sistemas_clusters")
     if necesidades.empty:
@@ -1785,9 +1935,13 @@ def vista_necesidades() -> None:
         return
 
     necesidades = ensure_columns(necesidades, ["id", *NECESIDAD_VISIBLE_COLS, "activo"])
+    necesidades = attach_need_systems(necesidades, necesidades_sistemas, sistemas)
+    chart_needs = expand_needs_by_system(necesidades, sistemas)
     tipo_options = clean_options(tipos.iloc[:, 0] if not tipos.empty else pd.Series(dtype=str), necesidades.get("tipo_de_proyecto", pd.Series(dtype=str)))
-    sistema_options = clean_options(sistemas.get("sistema_nombre", pd.Series(dtype=str)), necesidades.get("sistema_de_abastecimiento", pd.Series(dtype=str)))
-    codigo_options = clean_options(sistemas.get("sistema_codigo", pd.Series(dtype=str)), necesidades.get("codigo_de_sistema", pd.Series(dtype=str)))
+    sistema_options = clean_options(
+        sistemas.get("sistema_nombre", pd.Series(dtype=str)),
+        include_blank=False,
+    )
     costo_editor_options = clean_options(
         necesidades.get("costo", pd.Series(dtype=str)),
         extra=COSTO_NECESIDAD_OPTIONS,
@@ -1798,7 +1952,13 @@ def vista_necesidades() -> None:
     with tab_resumen:
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("Necesidades", f"{len(necesidades):,}")
-        c2.metric("Sistemas impactados", necesidades.get("sistema_de_abastecimiento", pd.Series(dtype=str)).nunique())
+        c2.metric(
+            "Sistemas impactados",
+            chart_needs.get("sistema_de_abastecimiento", pd.Series(dtype=str))
+            .replace("", pd.NA)
+            .dropna()
+            .nunique(),
+        )
         c3.metric("Tipos de proyecto", necesidades.get("tipo_de_proyecto", pd.Series(dtype=str)).nunique())
         c4.metric("Sin clasificar", int(necesidades.get("responsabilidad_atencion", pd.Series(dtype=str)).astype(str).str.strip().eq("").sum()))
         st.markdown("#### Indicadores por sistema de abastecimiento")
@@ -1808,7 +1968,7 @@ def vista_necesidades() -> None:
         )
 
         chart_systems = clean_options(
-            necesidades.get("sistema_de_abastecimiento", pd.Series(dtype=str)),
+            chart_needs.get("sistema_de_abastecimiento", pd.Series(dtype=str)),
             extra=["Sin sistema definido"],
         )
         system_color_map = {
@@ -1858,7 +2018,7 @@ def vista_necesidades() -> None:
             for chart_col, spec in zip(chart_cols, chart_specs[start:start + 2]):
                 with chart_col:
                     fig = build_needs_system_chart(
-                        necesidades,
+                        chart_needs,
                         color_map=system_color_map,
                         **spec,
                     )
@@ -1873,7 +2033,7 @@ def vista_necesidades() -> None:
             "para Almacenamiento se suma volumen (m³); para Sustitución de tuberías se suma longitud (km); "
             "en las demás categorías se cuenta la cantidad de iniciativas."
         )
-        summary_needs = build_needs_summary_table(necesidades, tipo_options)
+        summary_needs = build_needs_summary_table(chart_needs, tipo_options)
         if summary_needs.empty:
             st.info("No hay datos suficientes para construir la tabla resumen.")
         else:
@@ -1881,8 +2041,26 @@ def vista_necesidades() -> None:
 
     with tab_editor:
         xlsx_importer("necesidades", "necesidades", sistemas, "necesidades")
-        filtered = apply_filters(necesidades, "nec", ["tipo_de_proyecto", "codigo_de_sistema", "sistema_de_abastecimiento", "responsabilidad_atencion"])
-        display_cols = ["id", *NECESIDAD_VISIBLE_COLS]
+        selected_editor_systems = st.multiselect(
+            "Filtrar por sistemas asociados",
+            options=sistema_options,
+            key="nec_sistemas_asociados_filter",
+        )
+        filtered = apply_filters(
+            necesidades,
+            "nec",
+            ["tipo_de_proyecto", "responsabilidad_atencion"],
+        )
+        if selected_editor_systems:
+            filtered = filtered[
+                filtered["sistemas_asociados"].apply(
+                    lambda values: bool(
+                        set(split_system_selection(values))
+                        & set(selected_editor_systems)
+                    )
+                )
+            ]
+        display_cols = ["id", *NECESIDAD_EDITOR_COLS]
         editor_df = filtered[display_cols].copy()
         if "id" in editor_df.columns:
             editor_df = editor_df.set_index("id")
@@ -1890,8 +2068,18 @@ def vista_necesidades() -> None:
             "objetivo_de_la_iniciativa": st.column_config.TextColumn(NECESIDAD_LABELS["objetivo_de_la_iniciativa"], width="large"),
             "breve_descripcion": st.column_config.TextColumn(NECESIDAD_LABELS["breve_descripcion"], width="large"),
             "tipo_de_proyecto": st.column_config.SelectboxColumn(NECESIDAD_LABELS["tipo_de_proyecto"], options=tipo_options, required=False),
-            "codigo_de_sistema": st.column_config.SelectboxColumn(NECESIDAD_LABELS["codigo_de_sistema"], options=codigo_options, required=False),
-            "sistema_de_abastecimiento": st.column_config.SelectboxColumn(NECESIDAD_LABELS["sistema_de_abastecimiento"], options=sistema_options, required=False),
+            "sistemas_asociados": st.column_config.MultiselectColumn(
+                NECESIDAD_LABELS["sistemas_asociados"],
+                options=sistema_options,
+                required=False,
+                width="large",
+                help="Seleccione uno o varios sistemas. Los códigos se asignan automáticamente.",
+            ),
+            "codigos_asociados": st.column_config.TextColumn(
+                NECESIDAD_LABELS["codigos_asociados"],
+                width="medium",
+                disabled=True,
+            ),
             "costo": st.column_config.SelectboxColumn(
                 NECESIDAD_LABELS["costo"],
                 options=costo_editor_options,
@@ -1912,14 +2100,25 @@ def vista_necesidades() -> None:
             num_rows="fixed",
             height=560,
             column_config=column_config,
+            disabled=["codigos_asociados"],
             key="editor_necesidades",
         )
         edited = edited.reset_index()
         col1, col2 = st.columns([1, 2])
         if col1.button("Guardar cambios", type="primary", key="guardar_necesidades"):
             edited = normalize_need_rows(edited, sistemas)
-            upsert_rows("necesidades", edited)
-            st.success("Necesidades actualizadas.")
+            system_assignments = {
+                int(row["id"]): split_system_selection(row.get("sistemas_asociados"))
+                for _, row in edited.iterrows()
+            }
+            needs_to_save = edited.drop(
+                columns=["sistemas_asociados", "codigos_asociados"],
+                errors="ignore",
+            )
+            upsert_rows("necesidades", needs_to_save)
+            for need_id, selected_names in system_assignments.items():
+                replace_need_systems(need_id, selected_names, sistemas)
+            st.success("Necesidades y sistemas asociados actualizados.")
             st.rerun()
         id_label = "Eliminar necesidades por ID"
         ids = col2.multiselect(id_label, sorted(necesidades["id"].dropna().astype(int).unique().tolist())) if "id" in necesidades.columns else []
@@ -1935,12 +2134,18 @@ def vista_necesidades() -> None:
         with st.form("form_necesidad", clear_on_submit=True):
             objetivo = st.text_area("Objetivo de la iniciativa")
             descripcion = st.text_area("Breve descripción")
-            col1, col2, col3 = st.columns(3)
+            col1, col2 = st.columns([1, 2])
             tipo = col1.selectbox("Tipo de proyecto", tipo_options) if tipo_options else col1.text_input("Tipo de proyecto")
-            sistema = col2.selectbox("Sistema de Abastecimiento", sistema_options) if sistema_options else col2.text_input("Sistema de Abastecimiento")
-            by_name_code, _, _, _ = system_maps(sistemas)
-            codigo_sugerido = by_name_code.get(str(sistema), "")
-            codigo = col3.selectbox("Código de Sistema", codigo_options, index=option_index(codigo_options, codigo_sugerido)) if codigo_options else col3.text_input("Código de Sistema", value=codigo_sugerido)
+            selected_need_systems = col2.multiselect(
+                "Sistemas de abastecimiento asociados",
+                options=sistema_options,
+                help="Puede seleccionar uno o varios sistemas; sus códigos se asignarán automáticamente.",
+            )
+            selected_need_codes = system_codes_for_names(selected_need_systems, sistemas)
+            st.caption(
+                "Códigos que se asignarán automáticamente: "
+                + ("; ".join(selected_need_codes) if selected_need_codes else "ninguno")
+            )
             form_cost, form_attention = st.columns(2)
             costo = form_cost.selectbox(
                 "Estimación de costos de la posible alternativa de solución",
@@ -1965,8 +2170,10 @@ def vista_necesidades() -> None:
                             "objetivo_de_la_iniciativa": objetivo,
                             "breve_descripcion": descripcion,
                             "tipo_de_proyecto": tipo,
-                            "codigo_de_sistema": codigo,
-                            "sistema_de_abastecimiento": sistema,
+                            "codigo_de_sistema": "; ".join(selected_need_codes),
+                            "sistema_de_abastecimiento": "; ".join(selected_need_systems),
+                            "sistemas_asociados": selected_need_systems,
+                            "codigos_asociados": "; ".join(selected_need_codes),
                             "costo": costo,
                             "principal_reto_por_superar": reto,
                             "observacion": observacion,
@@ -1979,8 +2186,20 @@ def vista_necesidades() -> None:
                     ]
                 )
                 new_row = normalize_need_rows(new_row, sistemas)
-                upsert_rows("necesidades", new_row)
-                st.success("Necesidad agregada.")
+                saved_need = upsert_rows(
+                    "necesidades",
+                    new_row.drop(
+                        columns=["sistemas_asociados", "codigos_asociados"],
+                        errors="ignore",
+                    ),
+                )
+                new_need_id = int(saved_need.iloc[0]["id"])
+                replace_need_systems(
+                    new_need_id,
+                    selected_need_systems,
+                    sistemas,
+                )
+                st.success("Necesidad agregada con sus sistemas asociados.")
                 st.rerun()
 
 

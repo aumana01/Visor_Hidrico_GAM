@@ -23,6 +23,7 @@ LOCAL_DIR.mkdir(exist_ok=True)
 TABLE_FILES: dict[str, str] = {
     "proyectos": "proyectos_seed.csv",
     "necesidades_ubicaciones": "necesidades_ubicaciones_seed.csv",
+    "necesidades_sistemas": "necesidades_sistemas_seed.csv",
     "sistemas_clusters": "sistemas_clusters.csv",
     "capacidad_base": "capacidad_base_seed.csv",
     "necesidades": "necesidades_seed.csv",
@@ -33,7 +34,7 @@ TABLE_FILES: dict[str, str] = {
     "catalogo_situacion_terrenos": "catalogo_situacion_terrenos.csv",
 }
 
-ID_TABLES = {"proyectos", "necesidades", "necesidades_ubicaciones"}
+ID_TABLES = {"proyectos", "necesidades", "necesidades_ubicaciones", "necesidades_sistemas"}
 
 
 def _get_secret(name: str, default: str | None = None) -> str | None:
@@ -105,6 +106,7 @@ def _coerce_known_types(table: str, df: pd.DataFrame) -> pd.DataFrame:
         "caudal_estimado_lps",
         "volumen_estimado_m3",
         "km_estimado",
+        "necesidad_id",
     }
 
     bool_cols = {"activo_en_capacidad", "activo"}
@@ -138,6 +140,21 @@ def read_table(table: str) -> pd.DataFrame:
 
     except Exception as exc:
         st.error(f"Error leyendo la tabla '{table}' en Supabase: {exc}")
+        return _coerce_known_types(table, _read_csv(table))
+
+
+def read_optional_table(table: str) -> pd.DataFrame:
+    """Read an optional table without interrupting the UI if it is not deployed yet."""
+    client = get_supabase_client()
+
+    if client is None:
+        return _coerce_known_types(table, _read_csv(table))
+
+    try:
+        response = client.table(table).select("*").execute()
+        data = response.data or []
+        return _coerce_known_types(table, pd.DataFrame(data))
+    except Exception:
         return _coerce_known_types(table, _read_csv(table))
 
 
@@ -289,7 +306,7 @@ def _assign_missing_ids(table: str, df: pd.DataFrame, client: Client | None = No
     return out
 
 
-def upsert_rows(table: str, df: pd.DataFrame) -> None:
+def upsert_rows(table: str, df: pd.DataFrame) -> pd.DataFrame:
     """
     Insert/update rows.
 
@@ -301,7 +318,7 @@ def upsert_rows(table: str, df: pd.DataFrame) -> None:
     - Se reescribe el CSV local en data/_local_runtime.
     """
     if df.empty:
-        return
+        return df.copy()
 
     df = df.copy()
     client = get_supabase_client()
@@ -314,7 +331,7 @@ def upsert_rows(table: str, df: pd.DataFrame) -> None:
             client.table(table).upsert(records).execute()
 
         clear_cache()
-        return
+        return df
 
     current = _coerce_known_types(table, _read_csv(table))
 
@@ -329,7 +346,116 @@ def upsert_rows(table: str, df: pd.DataFrame) -> None:
 
     combined.to_csv(_runtime_file(table), index=False, encoding="utf-8-sig")
     clear_cache()
+    return df
 
+
+
+def replace_need_systems(
+    necesidad_id: int,
+    system_names: Iterable[object],
+    systems_catalog: pd.DataFrame,
+) -> None:
+    """Replace all system associations for one need and keep legacy fields in sync."""
+    need_id = int(necesidad_id)
+    names: list[str] = []
+    for raw_name in system_names:
+        if raw_name is None or pd.isna(raw_name):
+            continue
+        name = str(raw_name).strip()
+        if name and name not in names:
+            names.append(name)
+
+    catalog = systems_catalog.copy()
+    if catalog.empty:
+        if names:
+            raise RuntimeError("No está disponible el catálogo de sistemas de abastecimiento.")
+        code_by_name: dict[str, str] = {}
+    else:
+        for column in ["sistema_nombre", "sistema_codigo"]:
+            if column not in catalog.columns:
+                catalog[column] = ""
+        code_by_name = dict(
+            zip(
+                catalog["sistema_nombre"].astype(str).str.strip(),
+                catalog["sistema_codigo"].astype(str).str.strip(),
+            )
+        )
+        unknown = [name for name in names if name not in code_by_name]
+        if unknown:
+            raise ValueError(
+                "Los siguientes sistemas no existen en el catálogo: "
+                + ", ".join(unknown)
+            )
+
+    client = get_supabase_client()
+    if client is not None:
+        try:
+            client.rpc(
+                "set_necesidad_sistemas",
+                {
+                    "p_necesidad_id": need_id,
+                    "p_sistemas": names,
+                },
+            ).execute()
+        except Exception as exc:
+            raise RuntimeError(
+                "No fue posible guardar los sistemas asociados. Ejecute primero "
+                "el archivo sql/03_necesidades_sistemas.sql en Supabase. "
+                f"Detalle: {exc}"
+            ) from exc
+        clear_cache()
+        return
+
+    current = _coerce_known_types(
+        "necesidades_sistemas",
+        _read_csv("necesidades_sistemas"),
+    )
+    if not current.empty and "necesidad_id" in current.columns:
+        current = current[
+            ~pd.to_numeric(current["necesidad_id"], errors="coerce").eq(need_id)
+        ].copy()
+
+    relation_rows = pd.DataFrame(
+        [
+            {
+                "necesidad_id": need_id,
+                "sistema_nombre": name,
+                "sistema_codigo": code_by_name.get(name, ""),
+            }
+            for name in names
+        ]
+    )
+    if not relation_rows.empty:
+        relation_rows = _assign_missing_ids(
+            "necesidades_sistemas",
+            relation_rows,
+            client=None,
+        )
+        current = (
+            pd.concat([current, relation_rows], ignore_index=True)
+            if not current.empty
+            else relation_rows
+        )
+
+    current.to_csv(
+        _runtime_file("necesidades_sistemas"),
+        index=False,
+        encoding="utf-8-sig",
+    )
+
+    legacy_row = pd.DataFrame(
+        [
+            {
+                "id": need_id,
+                "sistema_de_abastecimiento": "; ".join(names) or None,
+                "codigo_de_sistema": (
+                    "; ".join(code_by_name.get(name, "") for name in names) or None
+                ),
+            }
+        ]
+    )
+    upsert_rows("necesidades", legacy_row)
+    clear_cache()
 
 def delete_rows(table: str, ids: Iterable[Any]) -> None:
     ids_list = [int(x) for x in ids if str(x).strip()]
@@ -376,6 +502,7 @@ def seed_supabase(overwrite: bool = False) -> dict[str, int]:
         "catalogo_situacion_terrenos",
         "proyectos",
         "necesidades",
+        "necesidades_sistemas",
         "necesidades_ubicaciones",
     ]
 

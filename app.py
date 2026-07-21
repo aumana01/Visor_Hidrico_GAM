@@ -5,6 +5,7 @@ import html
 import math
 import os
 import re
+import unicodedata
 from datetime import datetime
 from pathlib import Path
 from typing import Iterable
@@ -637,13 +638,52 @@ def split_system_selection(value: object) -> list[str]:
     return names
 
 
-def system_codes_for_names(system_names: Iterable[object], sistemas: pd.DataFrame) -> list[str]:
-    by_name_code, _, _, _ = system_maps(sistemas)
+def normalize_system_key(value: object) -> str:
+    """Comparable key tolerant of accents, punctuation and repeated whitespace."""
+    if value is None or pd.isna(value):
+        return ""
+    text = unicodedata.normalize("NFKD", str(value).strip()).encode(
+        "ascii", "ignore"
+    ).decode("ascii")
+    return re.sub(r"[^a-z0-9]+", "", text.casefold())
+
+
+def resolve_system_selection(
+    system_names: Iterable[object],
+    sistemas: pd.DataFrame,
+) -> tuple[list[str], list[str], list[str]]:
+    """Resolve selections to canonical catalog names and their codes."""
+    catalog = ensure_columns(
+        sistemas,
+        ["sistema_nombre", "sistema_codigo"],
+    ).copy()
+    canonical_by_key: dict[str, tuple[str, str]] = {}
+    for _, row in catalog.iterrows():
+        name = str(row.get("sistema_nombre", "")).strip()
+        code = str(row.get("sistema_codigo", "")).strip()
+        if not name or name.lower() in {"nan", "none", "<na>"}:
+            continue
+        canonical_by_key[normalize_system_key(name)] = (name, code)
+
+    canonical_names: list[str] = []
     codes: list[str] = []
-    for name in split_system_selection(list(system_names)):
-        code = str(by_name_code.get(name, "")).strip()
-        if code and code not in codes:
+    unknown: list[str] = []
+    for raw_name in split_system_selection(list(system_names)):
+        match = canonical_by_key.get(normalize_system_key(raw_name))
+        if match is None:
+            if raw_name not in unknown:
+                unknown.append(raw_name)
+            continue
+        name, code = match
+        if name not in canonical_names:
+            canonical_names.append(name)
+        if code and code.lower() not in {"nan", "none", "<na>"} and code not in codes:
             codes.append(code)
+    return canonical_names, codes, unknown
+
+
+def system_codes_for_names(system_names: Iterable[object], sistemas: pd.DataFrame) -> list[str]:
+    _, codes, _ = resolve_system_selection(system_names, sistemas)
     return codes
 
 
@@ -682,7 +722,8 @@ def attach_need_systems(
                 for code in split_system_selection(row.get("codigo_de_sistema"))
                 if code in by_code_name
             ]
-        codes = system_codes_for_names(names, sistemas)
+        canonical_names, codes, unknown = resolve_system_selection(names, sistemas)
+        names = canonical_names + [name for name in unknown if name not in canonical_names]
         associated.append(names)
         code_texts.append("; ".join(codes))
         out.at[row.name, "sistema_de_abastecimiento"] = "; ".join(names)
@@ -736,7 +777,8 @@ def normalize_need_rows(df: pd.DataFrame, sistemas: pd.DataFrame) -> pd.DataFram
                 if code in by_code_name
             ]
 
-        codes = system_codes_for_names(names, sistemas)
+        canonical_names, codes, unknown = resolve_system_selection(names, sistemas)
+        names = canonical_names + [name for name in unknown if name not in canonical_names]
         out.at[idx, "sistema_de_abastecimiento"] = "; ".join(names)
         out.at[idx, "codigo_de_sistema"] = "; ".join(codes)
         if "sistemas_asociados" in out.columns:
@@ -2060,7 +2102,10 @@ def vista_necesidades() -> None:
                     )
                 )
             ]
-        display_cols = ["id", *NECESIDAD_EDITOR_COLS]
+        display_cols = [
+            "id",
+            *[col for col in NECESIDAD_EDITOR_COLS if col != "codigos_asociados"],
+        ]
         editor_df = filtered[display_cols].copy()
         if "id" in editor_df.columns:
             editor_df = editor_df.set_index("id")
@@ -2074,11 +2119,6 @@ def vista_necesidades() -> None:
                 required=False,
                 width="large",
                 help="Seleccione uno o varios sistemas. Los códigos se asignan automáticamente.",
-            ),
-            "codigos_asociados": st.column_config.TextColumn(
-                NECESIDAD_LABELS["codigos_asociados"],
-                width="medium",
-                disabled=True,
             ),
             "costo": st.column_config.SelectboxColumn(
                 NECESIDAD_LABELS["costo"],
@@ -2100,26 +2140,62 @@ def vista_necesidades() -> None:
             num_rows="fixed",
             height=560,
             column_config=column_config,
-            disabled=["codigos_asociados"],
             key="editor_necesidades",
         )
         edited = edited.reset_index()
+        edited["codigos_asociados"] = edited["sistemas_asociados"].apply(
+            lambda names: "; ".join(system_codes_for_names(names, sistemas))
+        )
+        st.caption("Vista previa de códigos asignados automáticamente")
+        st.dataframe(
+            edited[["id", "sistemas_asociados", "codigos_asociados"]].rename(
+                columns=NECESIDAD_LABELS
+            ),
+            use_container_width=True,
+            hide_index=True,
+        )
         col1, col2 = st.columns([1, 2])
         if col1.button("Guardar cambios", type="primary", key="guardar_necesidades"):
             edited = normalize_need_rows(edited, sistemas)
-            system_assignments = {
-                int(row["id"]): split_system_selection(row.get("sistemas_asociados"))
-                for _, row in edited.iterrows()
-            }
-            needs_to_save = edited.drop(
-                columns=["sistemas_asociados", "codigos_asociados"],
-                errors="ignore",
-            )
-            upsert_rows("necesidades", needs_to_save)
-            for need_id, selected_names in system_assignments.items():
-                replace_need_systems(need_id, selected_names, sistemas)
-            st.success("Necesidades y sistemas asociados actualizados.")
-            st.rerun()
+            system_assignments: dict[int, list[str]] = {}
+            unresolved: dict[int, list[str]] = {}
+            for _, row in edited.iterrows():
+                need_id = int(row["id"])
+                names, _, unknown = resolve_system_selection(
+                    row.get("sistemas_asociados"),
+                    sistemas,
+                )
+                system_assignments[need_id] = names
+                if unknown:
+                    unresolved[need_id] = unknown
+
+            if unresolved:
+                details = "; ".join(
+                    f"ID {need_id}: {', '.join(names)}"
+                    for need_id, names in unresolved.items()
+                )
+                st.error(
+                    "No se guardaron cambios. Estos sistemas no coinciden con el "
+                    f"catálogo de sistemas: {details}"
+                )
+            else:
+                try:
+                    for need_id, selected_names in system_assignments.items():
+                        replace_need_systems(
+                            need_id,
+                            selected_names,
+                            sistemas,
+                        )
+                    needs_to_save = edited.drop(
+                        columns=["sistemas_asociados", "codigos_asociados"],
+                        errors="ignore",
+                    )
+                    upsert_rows("necesidades", needs_to_save)
+                except (RuntimeError, ValueError) as exc:
+                    st.error(str(exc))
+                else:
+                    st.success("Necesidades y sistemas asociados actualizados.")
+                    st.rerun()
         id_label = "Eliminar necesidades por ID"
         ids = col2.multiselect(id_label, sorted(necesidades["id"].dropna().astype(int).unique().tolist())) if "id" in necesidades.columns else []
         if col2.button("Eliminar seleccionadas", disabled=not ids):
@@ -2194,13 +2270,20 @@ def vista_necesidades() -> None:
                     ),
                 )
                 new_need_id = int(saved_need.iloc[0]["id"])
-                replace_need_systems(
-                    new_need_id,
-                    selected_need_systems,
-                    sistemas,
-                )
-                st.success("Necesidad agregada con sus sistemas asociados.")
-                st.rerun()
+                try:
+                    replace_need_systems(
+                        new_need_id,
+                        selected_need_systems,
+                        sistemas,
+                    )
+                except (RuntimeError, ValueError) as exc:
+                    st.error(
+                        "La necesidad fue creada, pero no se pudieron guardar sus "
+                        f"sistemas asociados. {exc}"
+                    )
+                else:
+                    st.success("Necesidad agregada con sus sistemas asociados.")
+                    st.rerun()
 
 
 

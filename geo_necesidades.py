@@ -784,24 +784,59 @@ def render_editor(needs: pd.DataFrame, locations: pd.DataFrame) -> None:
             .astype(int)
         )
 
-    all_need_ids = set(valid_needs["id"].astype(int))
+    all_systems_label = "Todos los sistemas"
+    no_system_label = "Sin sistema asociado"
+    system_values = valid_needs["sistema_de_abastecimiento"].apply(
+        lambda value: safe_text(value, "")
+    )
+    system_options = [all_systems_label, *clean_options(system_values)]
+    if system_values.eq("").any():
+        system_options.append(no_system_label)
+
+    filter_system_col, filter_status_col = st.columns(2)
+    selected_system = filter_system_col.selectbox(
+        "Sistema de abastecimiento",
+        options=system_options,
+        key="geo_editor_system_filter",
+    )
+
+    system_filtered_needs = valid_needs.copy()
+    if selected_system == no_system_label:
+        system_filtered_needs = system_filtered_needs[
+            system_filtered_needs["sistema_de_abastecimiento"]
+            .apply(lambda value: safe_text(value, ""))
+            .eq("")
+        ]
+    elif selected_system != all_systems_label:
+        system_filtered_needs = system_filtered_needs[
+            system_filtered_needs["sistema_de_abastecimiento"]
+            .apply(lambda value: safe_text(value, ""))
+            .eq(selected_system)
+        ]
+
+    system_need_ids = set(system_filtered_needs["id"].astype(int))
     status_labels = {
-        "Todas": f"Todas ({len(all_need_ids)})",
-        "Con georreferencia": f"Con georreferencia ({len(all_need_ids & georeferenced_ids)})",
-        "Sin georreferencia": f"Sin georreferencia ({len(all_need_ids - georeferenced_ids)})",
+        "Todas": f"Todas ({len(system_need_ids)})",
+        "Con georreferencia": (
+            f"Con georreferencia ({len(system_need_ids & georeferenced_ids)})"
+        ),
+        "Sin georreferencia": (
+            f"Sin georreferencia ({len(system_need_ids - georeferenced_ids)})"
+        ),
     }
-    georeference_status = st.selectbox(
+    georeference_status = filter_status_col.selectbox(
         "Estado de georreferenciación",
         options=list(status_labels),
         format_func=lambda value: status_labels[value],
         key="geo_editor_status_filter",
     )
     st.caption(
-        "Con georreferencia: posee al menos un pin con coordenadas válidas. "
+        "Los filtros de sistema y estado se aplican conjuntamente. "
+        "Con georreferencia: posee al menos un pin con coordenadas válidas; "
         "No aplica se clasifica como sin georreferencia."
     )
 
-    filtered_valid_needs = valid_needs.copy()
+    filtered_valid_needs = system_filtered_needs.copy()
     if georeference_status == "Con georreferencia":
         filtered_valid_needs = filtered_valid_needs[
             filtered_valid_needs["id"].isin(georeferenced_ids)
@@ -811,8 +846,12 @@ def render_editor(needs: pd.DataFrame, locations: pd.DataFrame) -> None:
             ~filtered_valid_needs["id"].isin(georeferenced_ids)
         ]
 
+    filtered_valid_needs = filtered_valid_needs.sort_values(
+        ["objetivo_de_la_iniciativa", "id"],
+        key=lambda values: values.astype(str).str.casefold(),
+    )
     if filtered_valid_needs.empty:
-        st.info("No hay necesidades que coincidan con el estado seleccionado.")
+        st.info("No hay necesidades que coincidan con los filtros seleccionados.")
         return
 
     labels = {
@@ -822,9 +861,13 @@ def render_editor(needs: pd.DataFrame, locations: pd.DataFrame) -> None:
         )
         for _, row in filtered_valid_needs.iterrows()
     }
+    available_need_ids = list(labels)
+    if st.session_state.get("geo_selected_need") not in available_need_ids:
+        st.session_state["geo_selected_need"] = available_need_ids[0]
+
     need_id = st.selectbox(
         "Necesidad o iniciativa",
-        options=list(labels),
+        options=available_need_ids,
         format_func=lambda value: labels[value],
         key="geo_selected_need",
     )

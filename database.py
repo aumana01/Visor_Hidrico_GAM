@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import os
+import re
+import unicodedata
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -350,42 +352,68 @@ def upsert_rows(table: str, df: pd.DataFrame) -> pd.DataFrame:
 
 
 
+def _normalize_system_key(value: object) -> str:
+    if value is None or pd.isna(value):
+        return ""
+    text = unicodedata.normalize("NFKD", str(value).strip()).encode(
+        "ascii", "ignore"
+    ).decode("ascii")
+    return re.sub(r"[^a-z0-9]+", "", text.casefold())
+
+
 def replace_need_systems(
     necesidad_id: int,
     system_names: Iterable[object],
     systems_catalog: pd.DataFrame,
 ) -> None:
-    """Replace all system associations for one need and keep legacy fields in sync."""
+    """Replace associations using canonical catalog names and codes."""
     need_id = int(necesidad_id)
-    names: list[str] = []
+    requested_names: list[str] = []
     for raw_name in system_names:
         if raw_name is None or pd.isna(raw_name):
             continue
         name = str(raw_name).strip()
-        if name and name not in names:
-            names.append(name)
+        if name and name not in requested_names:
+            requested_names.append(name)
 
     catalog = systems_catalog.copy()
-    if catalog.empty:
-        if names:
-            raise RuntimeError("No está disponible el catálogo de sistemas de abastecimiento.")
-        code_by_name: dict[str, str] = {}
-    else:
-        for column in ["sistema_nombre", "sistema_codigo"]:
-            if column not in catalog.columns:
-                catalog[column] = ""
-        code_by_name = dict(
-            zip(
-                catalog["sistema_nombre"].astype(str).str.strip(),
-                catalog["sistema_codigo"].astype(str).str.strip(),
-            )
+    for column in ["sistema_nombre", "sistema_codigo"]:
+        if column not in catalog.columns:
+            catalog[column] = ""
+
+    canonical_by_key: dict[str, tuple[str, str]] = {}
+    for _, row in catalog.iterrows():
+        name = str(row.get("sistema_nombre", "")).strip()
+        code = str(row.get("sistema_codigo", "")).strip()
+        if name and name.lower() not in {"nan", "none", "<na>"}:
+            canonical_by_key[_normalize_system_key(name)] = (name, code)
+
+    names: list[str] = []
+    code_by_name: dict[str, str] = {}
+    unknown: list[str] = []
+    without_code: list[str] = []
+    for requested in requested_names:
+        match = canonical_by_key.get(_normalize_system_key(requested))
+        if match is None:
+            unknown.append(requested)
+            continue
+        canonical_name, code = match
+        if canonical_name not in names:
+            names.append(canonical_name)
+            code_by_name[canonical_name] = code
+        if not code or code.lower() in {"nan", "none", "<na>"}:
+            without_code.append(canonical_name)
+
+    if unknown:
+        raise ValueError(
+            "Los siguientes sistemas no existen en el catálogo: "
+            + ", ".join(unknown)
         )
-        unknown = [name for name in names if name not in code_by_name]
-        if unknown:
-            raise ValueError(
-                "Los siguientes sistemas no existen en el catálogo: "
-                + ", ".join(unknown)
-            )
+    if without_code:
+        raise ValueError(
+            "Los siguientes sistemas no tienen código configurado en el catálogo: "
+            + ", ".join(dict.fromkeys(without_code))
+        )
 
     client = get_supabase_client()
     if client is not None:
@@ -399,8 +427,8 @@ def replace_need_systems(
             ).execute()
         except Exception as exc:
             raise RuntimeError(
-                "No fue posible guardar los sistemas asociados. Ejecute primero "
-                "el archivo sql/03_necesidades_sistemas.sql en Supabase. "
+                "No fue posible guardar los sistemas asociados. Verifique que "
+                "sql/03_necesidades_sistemas.sql se haya ejecutado en Supabase. "
                 f"Detalle: {exc}"
             ) from exc
         clear_cache()
@@ -447,15 +475,16 @@ def replace_need_systems(
         [
             {
                 "id": need_id,
-                "sistema_de_abastecimiento": "; ".join(names) or None,
-                "codigo_de_sistema": (
-                    "; ".join(code_by_name.get(name, "") for name in names) or None
+                "sistema_de_abastecimiento": "; ".join(names),
+                "codigo_de_sistema": "; ".join(
+                    code_by_name.get(name, "") for name in names
                 ),
             }
         ]
     )
     upsert_rows("necesidades", legacy_row)
     clear_cache()
+
 
 def delete_rows(table: str, ids: Iterable[Any]) -> None:
     ids_list = [int(x) for x in ids if str(x).strip()]

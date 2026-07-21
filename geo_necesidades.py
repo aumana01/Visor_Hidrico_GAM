@@ -84,6 +84,35 @@ def clean_options(values: Iterable[object]) -> list[str]:
     return sorted(options)
 
 
+def split_multi_values(value: object) -> list[str]:
+    if isinstance(value, (list, tuple, set)):
+        raw_values = list(value)
+    elif value is None or pd.isna(value):
+        raw_values = []
+    else:
+        raw_values = str(value).split(";")
+
+    values: list[str] = []
+    for raw_value in raw_values:
+        text = str(raw_value).strip()
+        if text and text.lower() not in {"nan", "none", "<na>"} and text not in values:
+            values.append(text)
+    return values
+
+
+def clean_multi_options(values: Iterable[object]) -> list[str]:
+    flattened: list[str] = []
+    for value in values:
+        for item in split_multi_values(value):
+            if item not in flattened:
+                flattened.append(item)
+    return sorted(flattened)
+
+
+def has_any_system(value: object, selected_systems: Iterable[str]) -> bool:
+    return bool(set(split_multi_values(value)) & set(selected_systems))
+
+
 def safe_text(value: object, fallback: str = "—") -> str:
     if value is None or pd.isna(value):
         return fallback
@@ -111,7 +140,8 @@ def need_title(row: pd.Series | dict[str, Any]) -> str:
 
 
 def normalize_system_code(value: object) -> str:
-    text = safe_text(value, "").upper().replace("-", "").replace(" ", "")
+    first_value = split_multi_values(value)
+    text = (first_value[0] if first_value else "").upper().replace("-", "").replace(" ", "")
     if text.startswith("MEA"):
         digits = "".join(character for character in text[3:] if character.isdigit())
         if digits:
@@ -282,13 +312,15 @@ def add_need_locations(
         lon = float(row["longitud"])
         title = need_title(row)
         location_name = safe_text(row.get("nombre_ubicacion"), title)
-        code = row.get("codigo_de_sistema")
-        color = system_color(code)
+        code_text = row.get("codigo_de_sistema")
+        code = split_multi_values(code_text)
+        primary_code = code[0] if code else ""
+        color = system_color(primary_code)
         popup = (
             "<div style='min-width:290px'>"
             f"<h4 style='margin:0 0 8px;color:#002B5C'>{html.escape(title)}</h4>"
             f"<b>Sistema:</b> {html.escape(safe_text(row.get('sistema_de_abastecimiento')))}<br>"
-            f"<b>Código:</b> {html.escape(safe_text(code))}<br>"
+            f"<b>Código:</b> {html.escape(safe_text(code_text))}<br>"
             f"<b>Tipo de necesidad:</b> {html.escape(safe_text(row.get('tipo_de_proyecto')))}<br>"
             f"<b>Tipo de ubicación:</b> {html.escape(safe_text(row.get('tipo_ubicacion')))}<br>"
             f"<b>Referencia:</b> {html.escape(location_name)}<br>"
@@ -637,7 +669,9 @@ def render_consultation(needs: pd.DataFrame, locations: pd.DataFrame) -> None:
         "Las etiquetas de necesidades aparecen desde zoom 12 y las de infraestructura desde zoom 14."
     )
     filter_a, filter_b, filter_c = st.columns(3)
-    systems = clean_options(needs.get("sistema_de_abastecimiento", pd.Series(dtype=str)))
+    systems = clean_multi_options(
+        needs.get("sistema_de_abastecimiento", pd.Series(dtype=str))
+    )
     need_types = clean_options(needs.get("tipo_de_proyecto", pd.Series(dtype=str)))
     selected_systems = filter_a.multiselect("Sistema de abastecimiento", systems, key="geo_filter_system")
     selected_types = filter_b.multiselect("Tipo de necesidad", need_types, key="geo_filter_type")
@@ -655,7 +689,9 @@ def render_consultation(needs: pd.DataFrame, locations: pd.DataFrame) -> None:
     filtered_needs = needs.copy()
     if selected_systems:
         filtered_needs = filtered_needs[
-            filtered_needs["sistema_de_abastecimiento"].astype(str).isin(selected_systems)
+            filtered_needs["sistema_de_abastecimiento"].apply(
+                lambda value: has_any_system(value, selected_systems)
+            )
         ]
     if selected_types:
         filtered_needs = filtered_needs[
@@ -712,7 +748,9 @@ def render_consultation(needs: pd.DataFrame, locations: pd.DataFrame) -> None:
     render_executive_metrics(filtered_needs)
 
     selected_codes = (
-        clean_options(filtered_needs.get("codigo_de_sistema", pd.Series(dtype=str)))
+        clean_multi_options(
+            filtered_needs.get("codigo_de_sistema", pd.Series(dtype=str))
+        )
         if selected_systems
         else []
     )
@@ -786,11 +824,9 @@ def render_editor(needs: pd.DataFrame, locations: pd.DataFrame) -> None:
 
     all_systems_label = "Todos los sistemas"
     no_system_label = "Sin sistema asociado"
-    system_values = valid_needs["sistema_de_abastecimiento"].apply(
-        lambda value: safe_text(value, "")
-    )
-    system_options = [all_systems_label, *clean_options(system_values)]
-    if system_values.eq("").any():
+    system_values = valid_needs["sistema_de_abastecimiento"]
+    system_options = [all_systems_label, *clean_multi_options(system_values)]
+    if system_values.apply(lambda value: not split_multi_values(value)).any():
         system_options.append(no_system_label)
 
     filter_system_col, filter_status_col = st.columns(2)
@@ -804,14 +840,12 @@ def render_editor(needs: pd.DataFrame, locations: pd.DataFrame) -> None:
     if selected_system == no_system_label:
         system_filtered_needs = system_filtered_needs[
             system_filtered_needs["sistema_de_abastecimiento"]
-            .apply(lambda value: safe_text(value, ""))
-            .eq("")
+            .apply(lambda value: not split_multi_values(value))
         ]
     elif selected_system != all_systems_label:
         system_filtered_needs = system_filtered_needs[
             system_filtered_needs["sistema_de_abastecimiento"]
-            .apply(lambda value: safe_text(value, ""))
-            .eq(selected_system)
+            .apply(lambda value: selected_system in split_multi_values(value))
         ]
 
     system_need_ids = set(system_filtered_needs["id"].astype(int))
@@ -906,7 +940,7 @@ def render_editor(needs: pd.DataFrame, locations: pd.DataFrame) -> None:
     map_object = build_map(
         valid_needs[pd.to_numeric(valid_needs["id"], errors="coerce").eq(int(need_id))],
         current_locations,
-        selected_codes=[need.get("codigo_de_sistema")],
+        selected_codes=split_multi_values(need.get("codigo_de_sistema")),
         include_infrastructure=True,
         allow_click=True,
     )

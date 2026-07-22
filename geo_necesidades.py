@@ -1117,7 +1117,7 @@ def render_editor(needs: pd.DataFrame, locations: pd.DataFrame) -> None:
 
 
 def vista_mapa_necesidades() -> None:
-    st.subheader("Vista 4 · Mapa de necesidades e iniciativas")
+    st.subheader("Vista 3.2 · Mapa de Necesidades")
     st.caption(
         "Herramienta para análisis, ordenamiento, georreferenciación y consulta sencilla "
         "de necesidades e iniciativas de los sistemas GAM."

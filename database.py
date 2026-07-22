@@ -26,6 +26,7 @@ TABLE_FILES: dict[str, str] = {
     "proyectos": "proyectos_seed.csv",
     "necesidades_ubicaciones": "necesidades_ubicaciones_seed.csv",
     "necesidades_sistemas": "necesidades_sistemas_seed.csv",
+    "necesidades_seguimiento": "necesidades_seguimiento_seed.csv",
     "sistemas_clusters": "sistemas_clusters.csv",
     "capacidad_base": "capacidad_base_seed.csv",
     "necesidades": "necesidades_seed.csv",
@@ -37,6 +38,7 @@ TABLE_FILES: dict[str, str] = {
 }
 
 ID_TABLES = {"proyectos", "necesidades", "necesidades_ubicaciones", "necesidades_sistemas"}
+NATURAL_KEY_TABLES = {"necesidades_seguimiento": "necesidad_id"}
 
 
 def _get_secret(name: str, default: str | None = None) -> str | None:
@@ -340,7 +342,18 @@ def upsert_rows(table: str, df: pd.DataFrame) -> pd.DataFrame:
     if table in ID_TABLES:
         df = _assign_missing_ids(table, df, client=None)
 
-    if not current.empty and "id" in current.columns and "id" in df.columns:
+    natural_key = NATURAL_KEY_TABLES.get(table)
+    if (
+        natural_key
+        and not current.empty
+        and natural_key in current.columns
+        and natural_key in df.columns
+    ):
+        current = current[
+            ~current[natural_key].astype(str).isin(df[natural_key].astype(str))
+        ]
+        combined = pd.concat([current, df], ignore_index=True)
+    elif not current.empty and "id" in current.columns and "id" in df.columns:
         current = current[~current["id"].astype(str).isin(df["id"].astype(str))]
         combined = pd.concat([current, df], ignore_index=True)
     else:
@@ -532,6 +545,7 @@ def seed_supabase(overwrite: bool = False) -> dict[str, int]:
         "proyectos",
         "necesidades",
         "necesidades_sistemas",
+        "necesidades_seguimiento",
         "necesidades_ubicaciones",
     ]
 

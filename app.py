@@ -123,6 +123,43 @@ ESTADO_SEGUIMIENTO_COLORS = {
     "Sin estado definido": "#CBD5E1",
 }
 
+ESTADO_SEGUIMIENTO_ICONS = {
+    "Conceptualizado como una idea": "⚪",
+    "En Ejecución": "🟠",
+    "Incorporada al BPIP o convertida en proyecto": "🔵",
+    "Iniciativa enviada a la Dirección de Planificación": "🔷",
+    "Iniciativa trasladada a SAID": "🟡",
+    "Trasladado a Presidencia": "🔹",
+    "Trasladado a Subgerencia GAM": "🩵",
+    "Necesidad Resuelta": "🟢",
+    "La Iniciativa puede ser asumida con presupuesto operativo": "🟣",
+    "Descartada o no viable": "🔴",
+    "Suspendida o pendiente de información": "🟤",
+}
+
+ESTADO_SEGUIMIENTO_ROW_COLORS = {
+    "Conceptualizado como una idea": "#F3F4F6",
+    "En Ejecución": "#FFEDD5",
+    "Incorporada al BPIP o convertida en proyecto": "#DBEAFE",
+    "Iniciativa enviada a la Dirección de Planificación": "#E0F2FE",
+    "Iniciativa trasladada a SAID": "#FEF3C7",
+    "Trasladado a Presidencia": "#E2E8F0",
+    "Trasladado a Subgerencia GAM": "#CFFAFE",
+    "Necesidad Resuelta": "#DCFCE7",
+    "La Iniciativa puede ser asumida con presupuesto operativo": "#F3E8FF",
+    "Descartada o no viable": "#FEE2E2",
+    "Suspendida o pendiente de información": "#FEF3C7",
+}
+
+ESTADO_SEGUIMIENTO_VISUAL = {
+    state: f"{ESTADO_SEGUIMIENTO_ICONS[state]} {state}"
+    for state in ESTADO_SEGUIMIENTO_OPTIONS
+}
+ESTADO_SEGUIMIENTO_VISUAL_INVERSO = {
+    visual: state for state, visual in ESTADO_SEGUIMIENTO_VISUAL.items()
+}
+ESTADO_SIN_DEFINIR_VISUAL = "⚪ Sin estado definido"
+
 NECESIDAD_VISIBLE_COLS = [
     "objetivo_de_la_iniciativa",
     "breve_descripcion",
@@ -2523,40 +2560,89 @@ def vista_seguimiento_necesidades() -> None:
     st.markdown("##### Tabla de seguimiento")
     st.caption(
         "Las columnas Estado actual y Detalle de Acción son editables. "
-        "Los demás campos provienen de la necesidad registrada."
+        "El color identifica visualmente el estado de cada iniciativa."
+    )
+
+    table_work = filtered.copy()
+    table_work["estado_visual"] = table_work["estado_actual"].apply(
+        lambda value: ESTADO_SEGUIMIENTO_VISUAL.get(
+            str(value).strip(),
+            ESTADO_SIN_DEFINIR_VISUAL,
+        )
     )
     table_columns = [
         "id",
         "nombre",
         "breve_descripcion",
+        "estado_visual",
+        "observacion",
         "tipo_de_proyecto",
         "sistema_de_abastecimiento",
         "valor_estimado",
         "unidad_medible",
-        "observacion",
-        "estado_actual",
         "detalle_accion",
     ]
-    editor_df = filtered[table_columns].copy().set_index("id")
+    editor_df = table_work[table_columns].copy().set_index("id")
+
+    def seguimiento_row_style(row: pd.Series) -> list[str]:
+        state = ESTADO_SEGUIMIENTO_VISUAL_INVERSO.get(
+            str(row.get("estado_visual", "")),
+            "",
+        )
+        background = ESTADO_SEGUIMIENTO_ROW_COLORS.get(state, "#F8FAFC")
+        return [
+            f"background-color: {background}; color: #111827"
+            for _ in row.index
+        ]
+
+    styled_editor_df = editor_df.style.apply(
+        seguimiento_row_style,
+        axis=1,
+    )
     edited = st.data_editor(
-        editor_df,
+        styled_editor_df,
         use_container_width=True,
         height=640,
         num_rows="fixed",
         disabled=[
             "nombre",
             "breve_descripcion",
+            "observacion",
             "tipo_de_proyecto",
             "sistema_de_abastecimiento",
             "valor_estimado",
             "unidad_medible",
-            "observacion",
         ],
         column_config={
+            "_index": st.column_config.NumberColumn(
+                "ID",
+                width="small",
+            ),
             "nombre": st.column_config.TextColumn("Nombre", width="large"),
             "breve_descripcion": st.column_config.TextColumn(
                 "Descripción",
                 width="large",
+            ),
+            "estado_visual": st.column_config.SelectboxColumn(
+                "ESTADO ACTUAL",
+                options=[
+                    ESTADO_SIN_DEFINIR_VISUAL,
+                    *[
+                        ESTADO_SEGUIMIENTO_VISUAL[state]
+                        for state in ESTADO_SEGUIMIENTO_OPTIONS
+                    ],
+                ],
+                required=False,
+                width="large",
+                help="El indicador de color corresponde al estado seleccionado.",
+            ),
+            "observacion": st.column_config.TextColumn(
+                "Observaciones / referencias",
+                width="large",
+                help=(
+                    "Información original registrada para la necesidad, "
+                    "incluidos antecedentes, oficios y referencias disponibles."
+                ),
             ),
             "tipo_de_proyecto": st.column_config.TextColumn(
                 "Categoría",
@@ -2573,20 +2659,6 @@ def vista_seguimiento_necesidades() -> None:
             "unidad_medible": st.column_config.TextColumn(
                 "Unidad medible",
                 width="small",
-            ),
-            "observacion": st.column_config.TextColumn(
-                "Observaciones / referencias",
-                width="large",
-                help=(
-                    "Información original registrada para la necesidad, "
-                    "incluidos antecedentes, oficios y referencias disponibles."
-                ),
-            ),
-            "estado_actual": st.column_config.SelectboxColumn(
-                "ESTADO ACTUAL",
-                options=["", *ESTADO_SEGUIMIENTO_OPTIONS],
-                required=False,
-                width="large",
             ),
             "detalle_accion": st.column_config.TextColumn(
                 "Detalle de Acción",
@@ -2607,14 +2679,16 @@ def vista_seguimiento_necesidades() -> None:
     ):
         save_df = edited.reset_index().rename(
             columns={"id": "necesidad_id"}
-        )[["necesidad_id", "estado_actual", "detalle_accion"]]
-        save_df["estado_actual"] = save_df["estado_actual"].apply(
-            lambda value: (
-                None
-                if value is None or str(value).strip() == ""
-                else str(value).strip()
+        )[["necesidad_id", "estado_visual", "detalle_accion"]]
+        save_df["estado_actual"] = save_df["estado_visual"].apply(
+            lambda value: ESTADO_SEGUIMIENTO_VISUAL_INVERSO.get(
+                str(value),
+                None,
             )
         )
+        save_df = save_df[
+            ["necesidad_id", "estado_actual", "detalle_accion"]
+        ]
         save_df["detalle_accion"] = (
             save_df["detalle_accion"].fillna("").astype(str).str.strip()
         )

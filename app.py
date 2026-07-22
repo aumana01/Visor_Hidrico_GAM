@@ -138,17 +138,17 @@ ESTADO_SEGUIMIENTO_ICONS = {
 }
 
 ESTADO_SEGUIMIENTO_ROW_COLORS = {
-    "Conceptualizado como una idea": "#F3F4F6",
-    "En Ejecución": "#FFEDD5",
-    "Incorporada al BPIP o convertida en proyecto": "#DBEAFE",
-    "Iniciativa enviada a la Dirección de Planificación": "#E0F2FE",
-    "Iniciativa trasladada a SAID": "#FEF3C7",
-    "Trasladado a Presidencia": "#E2E8F0",
-    "Trasladado a Subgerencia GAM": "#CFFAFE",
-    "Necesidad Resuelta": "#DCFCE7",
-    "La Iniciativa puede ser asumida con presupuesto operativo": "#F3E8FF",
-    "Descartada o no viable": "#FEE2E2",
-    "Suspendida o pendiente de información": "#FEF3C7",
+    "Conceptualizado como una idea": "#D1D5DB",
+    "En Ejecución": "#FDBA74",
+    "Incorporada al BPIP o convertida en proyecto": "#93C5FD",
+    "Iniciativa enviada a la Dirección de Planificación": "#7DD3FC",
+    "Iniciativa trasladada a SAID": "#FDE047",
+    "Trasladado a Presidencia": "#94A3B8",
+    "Trasladado a Subgerencia GAM": "#67E8F9",
+    "Necesidad Resuelta": "#86EFAC",
+    "La Iniciativa puede ser asumida con presupuesto operativo": "#D8B4FE",
+    "Descartada o no viable": "#FCA5A5",
+    "Suspendida o pendiente de información": "#FCD34D",
 }
 
 ESTADO_SEGUIMIENTO_VISUAL = {
@@ -2575,12 +2575,12 @@ def vista_seguimiento_necesidades() -> None:
         "nombre",
         "breve_descripcion",
         "estado_visual",
-        "observacion",
+        "detalle_accion",
         "tipo_de_proyecto",
         "sistema_de_abastecimiento",
         "valor_estimado",
         "unidad_medible",
-        "detalle_accion",
+        "observacion",
     ]
     editor_df = table_work[table_columns].copy().set_index("id")
 
@@ -2589,7 +2589,7 @@ def vista_seguimiento_necesidades() -> None:
             str(row.get("estado_visual", "")),
             "",
         )
-        background = ESTADO_SEGUIMIENTO_ROW_COLORS.get(state, "#F8FAFC")
+        background = ESTADO_SEGUIMIENTO_ROW_COLORS.get(state, "#E2E8F0")
         return [
             f"background-color: {background}; color: #111827"
             for _ in row.index
@@ -2661,7 +2661,7 @@ def vista_seguimiento_necesidades() -> None:
                 width="small",
             ),
             "detalle_accion": st.column_config.TextColumn(
-                "Detalle de Acción",
+                "Detalle de la acción",
                 help=(
                     "Indique número de oficio, traslado, comentario, "
                     "acción realizada u otra referencia relevante."

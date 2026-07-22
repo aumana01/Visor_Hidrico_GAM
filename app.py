@@ -2033,7 +2033,7 @@ def build_needs_system_chart(
 
 
 def vista_necesidades() -> None:
-    st.subheader("Vista 3 · Gestión y clasificación de necesidades")
+    st.subheader("Vista 3.1 · Generar / Administrar necesidades")
     necesidades = read_table("necesidades")
     necesidades_sistemas = read_optional_table("necesidades_sistemas")
     tipos = read_table("catalogo_tipos_proyecto")
@@ -2354,7 +2354,7 @@ def vista_necesidades() -> None:
 
 
 def vista_seguimiento_necesidades() -> None:
-    st.subheader("Vista 5 · Seguimiento de necesidades e iniciativas")
+    st.subheader("Vista 3.3 · Seguimiento de necesidades")
     st.caption(
         "Consulta y actualización del estado actual de cada iniciativa. "
         "Los datos de seguimiento se almacenan por separado y no modifican "
@@ -2978,7 +2978,7 @@ def format_file_size(size: object) -> str:
 
 
 def vista_lecciones() -> None:
-    st.subheader("Vista 6 · Lecciones aprendidas y experiencias realizadas")
+    st.subheader("Vista 4 · Lecciones Aprendidas con Proyectos de Inversión")
     st.caption(
         "Repositorio institucional de PDFs almacenado en Supabase Storage. "
         "Desde esta vista se pueden cargar, visualizar, descargar y eliminar archivos."
@@ -3157,27 +3157,54 @@ def main() -> None:
     title()
     admin_sidebar()
 
-    view = st.sidebar.radio(
-        "Vista",
-        [
-            "1. Gestión de proyectos",
-            "2. Capacidad hídrica GAM",
-            "3. Necesidades de inversión",
-            "4. Mapa de necesidades",
-            "5. Seguimiento de necesidades",
-            "6. Lecciones aprendidas",
-        ],
+    if "vista_principal" not in st.session_state:
+        st.session_state["vista_principal"] = "proyectos"
+
+    st.sidebar.markdown("##### Vistas")
+
+    def navigation_button(label: str, view_key: str) -> None:
+        active = st.session_state["vista_principal"] == view_key
+        if st.sidebar.button(
+            label,
+            use_container_width=True,
+            type="primary" if active else "secondary",
+            key=f"nav_{view_key}",
+        ):
+            if not active:
+                st.session_state["vista_principal"] = view_key
+                st.rerun()
+
+    navigation_button("1. Gestión de Proyectos", "proyectos")
+    navigation_button("2. Capacidad Hídrica GAM", "capacidad")
+
+    st.sidebar.markdown(
+        "**3. Gestión de información de Necesidades de Inversión**"
+    )
+    navigation_button(
+        "3.1 Generar / Administrar necesidades",
+        "necesidades",
+    )
+    navigation_button("3.2 Mapa de Necesidades", "mapa_necesidades")
+    navigation_button(
+        "3.3 Seguimiento de Necesidades",
+        "seguimiento_necesidades",
     )
 
-    if view.startswith("1"):
+    navigation_button(
+        "4. Lecciones Aprendidas con Proyectos de Inversión",
+        "lecciones",
+    )
+
+    view = st.session_state["vista_principal"]
+    if view == "proyectos":
         vista_proyectos()
-    elif view.startswith("2"):
+    elif view == "capacidad":
         vista_capacidad()
-    elif view.startswith("3"):
+    elif view == "necesidades":
         vista_necesidades()
-    elif view.startswith("4"):
+    elif view == "mapa_necesidades":
         vista_mapa_necesidades()
-    elif view.startswith("5"):
+    elif view == "seguimiento_necesidades":
         vista_seguimiento_necesidades()
     else:
         vista_lecciones()

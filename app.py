@@ -2448,6 +2448,7 @@ def vista_seguimiento_necesidades() -> None:
                 "breve_descripcion",
                 "tipo_de_proyecto",
                 "sistema_de_abastecimiento",
+                "observacion",
                 "detalle_accion",
             ]
         ].fillna("").astype(str).agg(" ".join, axis=1)
@@ -2520,6 +2521,7 @@ def vista_seguimiento_necesidades() -> None:
         "sistema_de_abastecimiento",
         "valor_estimado",
         "unidad_medible",
+        "observacion",
         "estado_actual",
         "detalle_accion",
     ]
@@ -2536,6 +2538,7 @@ def vista_seguimiento_necesidades() -> None:
             "sistema_de_abastecimiento",
             "valor_estimado",
             "unidad_medible",
+            "observacion",
         ],
         column_config={
             "nombre": st.column_config.TextColumn("Nombre", width="large"),
@@ -2558,6 +2561,14 @@ def vista_seguimiento_necesidades() -> None:
             "unidad_medible": st.column_config.TextColumn(
                 "Unidad medible",
                 width="small",
+            ),
+            "observacion": st.column_config.TextColumn(
+                "Observaciones / referencias",
+                width="large",
+                help=(
+                    "Información original registrada para la necesidad, "
+                    "incluidos antecedentes, oficios y referencias disponibles."
+                ),
             ),
             "estado_actual": st.column_config.SelectboxColumn(
                 "ESTADO ACTUAL",

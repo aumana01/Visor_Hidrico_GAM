@@ -2978,7 +2978,7 @@ def format_file_size(size: object) -> str:
 
 
 def vista_lecciones() -> None:
-    st.subheader("Vista 4 · Lecciones Aprendidas con Proyectos de Inversión")
+    st.subheader("Vista 4.1 · Lecciones Aprendidas con Proyectos de Inversión")
     st.caption(
         "Repositorio institucional de PDFs almacenado en Supabase Storage. "
         "Desde esta vista se pueden cargar, visualizar, descargar y eliminar archivos."
@@ -3190,8 +3190,9 @@ def main() -> None:
         "seguimiento_necesidades",
     )
 
+    st.sidebar.markdown("**4. Otros**")
     navigation_button(
-        "4. Lecciones Aprendidas con Proyectos de Inversión",
+        "4.1 Lecciones Aprendidas con Proyectos de Inversión",
         "lecciones",
     )
 

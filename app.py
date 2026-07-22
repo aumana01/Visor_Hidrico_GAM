@@ -96,22 +96,30 @@ COSTO_NECESIDAD_OPTIONS = [
 
 ESTADO_SEGUIMIENTO_OPTIONS = [
     "Conceptualizado como una idea",
+    "En Ejecución",
+    "Incorporada al BPIP o convertida en proyecto",
     "Iniciativa enviada a la Dirección de Planificación",
     "Iniciativa trasladada a SAID",
     "Trasladado a Presidencia",
     "Trasladado a Subgerencia GAM",
     "Necesidad Resuelta",
     "La Iniciativa puede ser asumida con presupuesto operativo",
+    "Descartada o no viable",
+    "Suspendida o pendiente de información",
 ]
 
 ESTADO_SEGUIMIENTO_COLORS = {
     "Conceptualizado como una idea": "#6B7280",
+    "En Ejecución": "#EA580C",
+    "Incorporada al BPIP o convertida en proyecto": "#1D4ED8",
     "Iniciativa enviada a la Dirección de Planificación": "#2563EB",
     "Iniciativa trasladada a SAID": "#C9A227",
     "Trasladado a Presidencia": "#002B5C",
     "Trasladado a Subgerencia GAM": "#0891B2",
     "Necesidad Resuelta": "#16A34A",
     "La Iniciativa puede ser asumida con presupuesto operativo": "#7C3AED",
+    "Descartada o no viable": "#DC2626",
+    "Suspendida o pendiente de información": "#D97706",
     "Sin estado definido": "#CBD5E1",
 }
 

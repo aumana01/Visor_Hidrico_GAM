@@ -4,11 +4,13 @@ import colorsys
 import hashlib
 import html
 import json
+import textwrap
 import unicodedata
 from pathlib import Path
 from typing import Any, Iterable
 
 import folium
+from folium.plugins import Fullscreen
 import pandas as pd
 import plotly.express as px
 import streamlit as st
@@ -118,6 +120,27 @@ def safe_text(value: object, fallback: str = "—") -> str:
         return fallback
     text = str(value).strip()
     return text if text and text.lower() not in {"nan", "none", "<na>"} else fallback
+
+
+def compact_label_html(
+    value: object,
+    characters_per_line: int = 24,
+    max_lines: int = 3,
+) -> str:
+    """Return a compact, escaped map label split into a few short lines."""
+    text = safe_text(value, "")
+    if not text:
+        return ""
+    lines = textwrap.wrap(
+        text,
+        width=characters_per_line,
+        break_long_words=False,
+        break_on_hyphens=False,
+    )
+    if len(lines) > max_lines:
+        lines = lines[:max_lines]
+        lines[-1] = lines[-1].rstrip(" .") + "…"
+    return "<br>".join(html.escape(line) for line in lines)
 
 
 def valid_lat_lon(lat: object, lon: object) -> bool:
@@ -342,9 +365,13 @@ def add_need_locations(
         folium.Marker(
             [lat, lon],
             icon=folium.DivIcon(
-                icon_size=(260, 24),
-                icon_anchor=(-10, 13),
-                html=f"<div class='need-map-label'>{html.escape(title)}</div>",
+                icon_size=(165, 48),
+                icon_anchor=(-8, 13),
+                html=(
+                    "<div class='need-map-label'>"
+                    f"{compact_label_html(title)}"
+                    "</div>"
+                ),
             ),
         ).add_to(feature_group)
         bounds.append([lat, lon])
@@ -372,7 +399,19 @@ def add_dynamic_label_behavior(map_object: folium.Map) -> None:
         box-shadow:0 1px 3px rgba(15,23,42,.18);
         pointer-events:none;
     }
-    .need-map-label{border-left:4px solid #C9A227;font-size:12px;}
+    .need-map-label{
+        width:150px;
+        max-width:150px;
+        max-height:38px;
+        white-space:normal;
+        overflow:hidden;
+        overflow-wrap:anywhere;
+        text-overflow:clip;
+        border-left:3px solid #C9A227;
+        padding:2px 4px;
+        font-size:9px;
+        line-height:1.12;
+    }
     </style>
     """
     script = f"""
@@ -413,6 +452,11 @@ def build_map(
         prefer_canvas=True,
     )
     folium.TileLayer("OpenStreetMap", name="OpenStreetMap").add_to(map_object)
+    Fullscreen(
+        position="topleft",
+        title="Pantalla completa",
+        title_cancel="Salir de pantalla completa",
+    ).add_to(map_object)
     add_system_layer(map_object, selected_codes)
     if include_infrastructure:
         add_infrastructure_layers(map_object)

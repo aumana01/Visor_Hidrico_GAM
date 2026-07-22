@@ -98,6 +98,8 @@ ESTADO_SEGUIMIENTO_OPTIONS = [
     "Conceptualizado como una idea",
     "Iniciativa enviada a la Dirección de Planificación",
     "Iniciativa trasladada a SAID",
+    "Trasladado a Presidencia",
+    "Trasladado a Subgerencia GAM",
     "Necesidad Resuelta",
     "La Iniciativa puede ser asumida con presupuesto operativo",
 ]
@@ -106,6 +108,8 @@ ESTADO_SEGUIMIENTO_COLORS = {
     "Conceptualizado como una idea": "#6B7280",
     "Iniciativa enviada a la Dirección de Planificación": "#2563EB",
     "Iniciativa trasladada a SAID": "#C9A227",
+    "Trasladado a Presidencia": "#002B5C",
+    "Trasladado a Subgerencia GAM": "#0891B2",
     "Necesidad Resuelta": "#16A34A",
     "La Iniciativa puede ser asumida con presupuesto operativo": "#7C3AED",
     "Sin estado definido": "#CBD5E1",

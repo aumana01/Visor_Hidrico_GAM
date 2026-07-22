@@ -28,7 +28,7 @@ from database import (
     seed_supabase,
     upsert_rows,
 )
-from geo_necesidades import vista_mapa_necesidades
+from geo_necesidades import initiative_measure, vista_mapa_necesidades
 
 AYA_AZUL = "#002B5C"
 AYA_DORADO = "#C9A227"
@@ -93,6 +93,23 @@ COSTO_NECESIDAD_OPTIONS = [
     "Entre ¢1,000,001.00 y ¢5,000,000.00",
     "Más de ¢5,000,000.00",
 ]
+
+ESTADO_SEGUIMIENTO_OPTIONS = [
+    "Conceptualizado como una idea",
+    "Iniciativa enviada a la Dirección de Planificación",
+    "Iniciativa trasladada a SAID",
+    "Necesidad Resuelta",
+    "La Iniciativa puede ser asumida con presupuesto operativo",
+]
+
+ESTADO_SEGUIMIENTO_COLORS = {
+    "Conceptualizado como una idea": "#6B7280",
+    "Iniciativa enviada a la Dirección de Planificación": "#2563EB",
+    "Iniciativa trasladada a SAID": "#C9A227",
+    "Necesidad Resuelta": "#16A34A",
+    "La Iniciativa puede ser asumida con presupuesto operativo": "#7C3AED",
+    "Sin estado definido": "#CBD5E1",
+}
 
 NECESIDAD_VISIBLE_COLS = [
     "objetivo_de_la_iniciativa",
@@ -2287,6 +2304,310 @@ def vista_necesidades() -> None:
 
 
 
+def vista_seguimiento_necesidades() -> None:
+    st.subheader("Vista 5 · Seguimiento de necesidades e iniciativas")
+    st.caption(
+        "Consulta y actualización del estado actual de cada iniciativa. "
+        "Los datos de seguimiento se almacenan por separado y no modifican "
+        "la información técnica de las necesidades."
+    )
+
+    necesidades = read_table("necesidades")
+    if necesidades.empty:
+        st.warning("No hay necesidades disponibles para seguimiento.")
+        return
+
+    sistemas = read_table("sistemas_clusters")
+    relaciones = read_optional_table("necesidades_sistemas")
+    seguimiento = read_optional_table("necesidades_seguimiento")
+
+    necesidades = ensure_columns(
+        necesidades,
+        [
+            "id",
+            *NECESIDAD_VISIBLE_COLS,
+        ],
+    )
+    necesidades = attach_need_systems(necesidades, relaciones, sistemas)
+    work = necesidades.copy()
+    work["id"] = pd.to_numeric(work["id"], errors="coerce")
+    work = work[work["id"].notna()].copy()
+    work["id"] = work["id"].astype(int)
+
+    seguimiento = ensure_columns(
+        seguimiento,
+        ["necesidad_id", "estado_actual", "detalle_accion"],
+    )
+    if not seguimiento.empty:
+        seguimiento["necesidad_id"] = pd.to_numeric(
+            seguimiento["necesidad_id"],
+            errors="coerce",
+        )
+        seguimiento = (
+            seguimiento[seguimiento["necesidad_id"].notna()]
+            .drop_duplicates("necesidad_id", keep="last")
+            [["necesidad_id", "estado_actual", "detalle_accion"]]
+        )
+        work = work.merge(
+            seguimiento,
+            left_on="id",
+            right_on="necesidad_id",
+            how="left",
+        )
+    else:
+        work["estado_actual"] = ""
+        work["detalle_accion"] = ""
+
+    work["estado_actual"] = work["estado_actual"].fillna("").astype(str)
+    work["detalle_accion"] = work["detalle_accion"].fillna("").astype(str)
+    work["nombre"] = work["objetivo_de_la_iniciativa"].fillna("").astype(str)
+    work.loc[work["nombre"].str.strip().eq(""), "nombre"] = (
+        work["breve_descripcion"].fillna("").astype(str)
+    )
+    measures = work.apply(initiative_measure, axis=1)
+    work["valor_estimado"] = [
+        "" if value is None else f"{value:,.2f}"
+        for value, _ in measures
+    ]
+    work["unidad_medible"] = [unit for _, unit in measures]
+
+    st.markdown("##### Filtros de seguimiento")
+    f1, f2, f3 = st.columns([1.1, 2.2, 2])
+    selected_ids = f1.multiselect(
+        "ID",
+        options=sorted(work["id"].unique().tolist()),
+        key="seguimiento_filtro_id",
+    )
+    status_filter_options = [
+        *ESTADO_SEGUIMIENTO_OPTIONS,
+        "Sin estado definido",
+    ]
+    selected_states = f2.multiselect(
+        "Estado",
+        options=status_filter_options,
+        key="seguimiento_filtro_estado",
+    )
+    type_options = clean_options(
+        work.get("tipo_de_proyecto", pd.Series(dtype=str)),
+        include_blank=False,
+    )
+    selected_types = f3.multiselect(
+        "Tipo de iniciativa",
+        options=type_options,
+        key="seguimiento_filtro_tipo",
+    )
+
+    f4, f5 = st.columns([1.2, 2])
+    keyword = f4.text_input(
+        "Palabra clave",
+        placeholder="Buscar en nombre, descripción o detalle…",
+        key="seguimiento_filtro_palabra",
+    )
+    system_filter_options = clean_options(
+        sistemas.get("sistema_nombre", pd.Series(dtype=str)),
+        extra=[
+            name
+            for values in work["sistemas_asociados"]
+            for name in split_system_selection(values)
+        ],
+        include_blank=False,
+    )
+    selected_systems = f5.multiselect(
+        "Sistema de abastecimiento",
+        options=system_filter_options,
+        key="seguimiento_filtro_sistema",
+    )
+
+    filtered = work.copy()
+    if selected_ids:
+        filtered = filtered[filtered["id"].isin(selected_ids)]
+    if selected_states:
+        state_values = filtered["estado_actual"].where(
+            filtered["estado_actual"].str.strip().ne(""),
+            "Sin estado definido",
+        )
+        filtered = filtered[state_values.isin(selected_states)]
+    if selected_types:
+        filtered = filtered[
+            filtered["tipo_de_proyecto"].astype(str).isin(selected_types)
+        ]
+    if selected_systems:
+        selected_set = set(selected_systems)
+        filtered = filtered[
+            filtered["sistemas_asociados"].apply(
+                lambda values: bool(
+                    selected_set & set(split_system_selection(values))
+                )
+            )
+        ]
+    normalized_keyword = normalize_system_key(keyword)
+    if normalized_keyword:
+        searchable = filtered[
+            [
+                "nombre",
+                "breve_descripcion",
+                "tipo_de_proyecto",
+                "sistema_de_abastecimiento",
+                "detalle_accion",
+            ]
+        ].fillna("").astype(str).agg(" ".join, axis=1)
+        filtered = filtered[
+            searchable.map(normalize_system_key).str.contains(
+                re.escape(normalized_keyword),
+                regex=True,
+                na=False,
+            )
+        ]
+
+    chart_data = (
+        filtered["estado_actual"]
+        .where(filtered["estado_actual"].str.strip().ne(""), "Sin estado definido")
+        .value_counts()
+        .rename_axis("Estado actual")
+        .reset_index(name="Cantidad")
+    )
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Iniciativas filtradas", f"{len(filtered):,}")
+    c2.metric(
+        "Con estado definido",
+        f"{int(filtered['estado_actual'].str.strip().ne('').sum()):,}",
+    )
+    c3.metric(
+        "Pendientes de clasificar",
+        f"{int(filtered['estado_actual'].str.strip().eq('').sum()):,}",
+    )
+
+    if not chart_data.empty:
+        chart_data["Orden"] = chart_data["Estado actual"].map(
+            {
+                state: index
+                for index, state in enumerate(
+                    [*ESTADO_SEGUIMIENTO_OPTIONS, "Sin estado definido"]
+                )
+            }
+        )
+        chart_data = chart_data.sort_values("Orden", ascending=False)
+        fig = px.bar(
+            chart_data,
+            x="Cantidad",
+            y="Estado actual",
+            orientation="h",
+            text="Cantidad",
+            color="Estado actual",
+            color_discrete_map=ESTADO_SEGUIMIENTO_COLORS,
+            title="Resumen de iniciativas por estado actual",
+        )
+        fig.update_traces(textposition="outside", cliponaxis=False)
+        fig.update_layout(
+            height=390,
+            showlegend=False,
+            margin=dict(l=20, r=55, t=55, b=25),
+            xaxis_title="Cantidad de iniciativas",
+            yaxis_title="",
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
+    st.markdown("##### Tabla de seguimiento")
+    st.caption(
+        "Las columnas Estado actual y Detalle de Acción son editables. "
+        "Los demás campos provienen de la necesidad registrada."
+    )
+    table_columns = [
+        "id",
+        "nombre",
+        "breve_descripcion",
+        "tipo_de_proyecto",
+        "sistema_de_abastecimiento",
+        "valor_estimado",
+        "unidad_medible",
+        "estado_actual",
+        "detalle_accion",
+    ]
+    editor_df = filtered[table_columns].copy().set_index("id")
+    edited = st.data_editor(
+        editor_df,
+        use_container_width=True,
+        height=640,
+        num_rows="fixed",
+        disabled=[
+            "nombre",
+            "breve_descripcion",
+            "tipo_de_proyecto",
+            "sistema_de_abastecimiento",
+            "valor_estimado",
+            "unidad_medible",
+        ],
+        column_config={
+            "nombre": st.column_config.TextColumn("Nombre", width="large"),
+            "breve_descripcion": st.column_config.TextColumn(
+                "Descripción",
+                width="large",
+            ),
+            "tipo_de_proyecto": st.column_config.TextColumn(
+                "Categoría",
+                width="medium",
+            ),
+            "sistema_de_abastecimiento": st.column_config.TextColumn(
+                "Sistema de abastecimiento",
+                width="large",
+            ),
+            "valor_estimado": st.column_config.TextColumn(
+                "Valor estimado",
+                width="small",
+            ),
+            "unidad_medible": st.column_config.TextColumn(
+                "Unidad medible",
+                width="small",
+            ),
+            "estado_actual": st.column_config.SelectboxColumn(
+                "ESTADO ACTUAL",
+                options=["", *ESTADO_SEGUIMIENTO_OPTIONS],
+                required=False,
+                width="large",
+            ),
+            "detalle_accion": st.column_config.TextColumn(
+                "Detalle de Acción",
+                help=(
+                    "Indique número de oficio, traslado, comentario, "
+                    "acción realizada u otra referencia relevante."
+                ),
+                width="large",
+            ),
+        },
+        key="editor_seguimiento_necesidades",
+    )
+
+    if st.button(
+        "Guardar cambios",
+        type="primary",
+        key="guardar_seguimiento_necesidades",
+    ):
+        save_df = edited.reset_index().rename(
+            columns={"id": "necesidad_id"}
+        )[["necesidad_id", "estado_actual", "detalle_accion"]]
+        save_df["estado_actual"] = save_df["estado_actual"].apply(
+            lambda value: (
+                None
+                if value is None or str(value).strip() == ""
+                else str(value).strip()
+            )
+        )
+        save_df["detalle_accion"] = (
+            save_df["detalle_accion"].fillna("").astype(str).str.strip()
+        )
+        try:
+            upsert_rows("necesidades_seguimiento", save_df)
+        except Exception as exc:
+            st.error(
+                "No fue posible guardar el seguimiento. Ejecute primero "
+                "sql/04_seguimiento_necesidades.sql en Supabase. "
+                f"Detalle: {exc}"
+            )
+        else:
+            st.success("Estados y detalles de acción guardados correctamente.")
+            st.rerun()
+
+
 def get_secret_or_env(name: str, default: str = "") -> str:
     """Lee secretos desde Streamlit Cloud o variables de entorno locales."""
     try:
@@ -2560,7 +2881,7 @@ def format_file_size(size: object) -> str:
 
 
 def vista_lecciones() -> None:
-    st.subheader("Vista 5 · Lecciones aprendidas y experiencias realizadas")
+    st.subheader("Vista 6 · Lecciones aprendidas y experiencias realizadas")
     st.caption(
         "Repositorio institucional de PDFs almacenado en Supabase Storage. "
         "Desde esta vista se pueden cargar, visualizar, descargar y eliminar archivos."
@@ -2746,7 +3067,8 @@ def main() -> None:
             "2. Capacidad hídrica GAM",
             "3. Necesidades de inversión",
             "4. Mapa de necesidades",
-            "5. Lecciones aprendidas",
+            "5. Seguimiento de necesidades",
+            "6. Lecciones aprendidas",
         ],
     )
 
@@ -2758,6 +3080,8 @@ def main() -> None:
         vista_necesidades()
     elif view.startswith("4"):
         vista_mapa_necesidades()
+    elif view.startswith("5"):
+        vista_seguimiento_necesidades()
     else:
         vista_lecciones()
 

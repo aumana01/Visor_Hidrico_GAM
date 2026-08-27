@@ -11,3 +11,5 @@ pydeck>=0.9
 streamlit-autorefresh
 folium>=0.17
 streamlit-folium>=0.23
+shapely>=2.0
+pyproj>=3.6

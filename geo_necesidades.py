@@ -14,6 +14,7 @@ import streamlit as st
 from geo_necesidades_legacy import *  # noqa: F401,F403
 import territorio_necesidades as _territorio_base
 import territorio_necesidades_v2 as _territorio
+import dta_nombres_extra as _dta
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -22,6 +23,11 @@ DISTRICTS_FILE = GEO_DIR / "distritos.geojson"
 
 # Usar siempre el GeoJSON real cargado al repositorio.
 _territorio_base.DISTRICTS_FILE = DISTRICTS_FILE
+
+# Catálogo de nombres administrativos legibles para GAM y sistemas periféricos.
+_territorio.province_name = _dta.province_name
+_territorio.canton_name = _dta.canton_name
+_territorio.district_name = _dta.district_name
 
 
 def _geodata_signature() -> tuple[tuple[str, int, int], ...]:

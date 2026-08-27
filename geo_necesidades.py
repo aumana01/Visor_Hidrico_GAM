@@ -7,36 +7,55 @@ por la versión con geoproceso territorial automático.
 
 from __future__ import annotations
 
-import base64
-import lzma
-import tempfile
 from pathlib import Path
+
+import streamlit as st
 
 from geo_necesidades_legacy import *  # noqa: F401,F403
 import territorio_necesidades as _territorio
 
 
-# El GeoJSON suministrado se conserva comprimido en el repositorio para reducir
-# el peso del despliegue. Se descomprime de forma temporal al iniciar el proceso.
-_packed_districts = (
-    Path(__file__).resolve().parent
-    / "data"
-    / "geoespacial"
-    / "distritos.geojson.xz.b64"
-)
+BASE_DIR = Path(__file__).resolve().parent
+GEO_DIR = BASE_DIR / "data" / "geoespacial"
+DISTRICTS_FILE = GEO_DIR / "distritos.geojson"
 
-if _packed_districts.exists():
-    try:
-        _raw_districts = lzma.decompress(
-            base64.b64decode(_packed_districts.read_text(encoding="utf-8").strip())
-        )
-        _runtime_districts = Path(tempfile.gettempdir()) / "visor_hidrico_distritos.geojson"
-        _runtime_districts.write_bytes(_raw_districts)
-        _territorio.DISTRICTS_FILE = _runtime_districts
-    except Exception:
-        # La vista territorial ya posee una ruta de contingencia que conserva
-        # la consulta anterior si la capa administrativa no puede cargarse.
-        pass
+# Usar siempre el GeoJSON real cargado al repositorio.
+# La versión comprimida temporal ya no se usa.
+_territorio.DISTRICTS_FILE = DISTRICTS_FILE
 
 
-vista_mapa_necesidades = _territorio.vista_mapa_necesidades_territorial
+def _geodata_signature() -> tuple[tuple[str, int, int], ...]:
+    """Firma de los insumos geoespaciales para invalidar caché si cambian."""
+    paths = [DISTRICTS_FILE, *sorted(GEO_DIR.glob("sistemas_*.json"))]
+    signature: list[tuple[str, int, int]] = []
+    for path in paths:
+        if not path.exists():
+            signature.append((path.name, -1, -1))
+            continue
+        stat = path.stat()
+        signature.append((path.name, int(stat.st_size), int(stat.st_mtime_ns)))
+    return tuple(signature)
+
+
+def _clear_territorial_cache_if_needed() -> None:
+    """Evita conservar un cruce vacío calculado antes de subir distritos.geojson."""
+    signature = _geodata_signature()
+    state_key = "_territorial_geodata_signature"
+    if st.session_state.get(state_key) == signature:
+        return
+
+    for cached_function_name in ("load_admin_geojson", "territorial_crosswalk"):
+        cached_function = getattr(_territorio, cached_function_name, None)
+        clear_method = getattr(cached_function, "clear", None)
+        if callable(clear_method):
+            clear_method()
+
+    # Fuerza una nueva sincronización a Supabase cuando cambian los insumos.
+    st.session_state.pop("_territorial_crosswalk_synced", None)
+    st.session_state[state_key] = signature
+
+
+def vista_mapa_necesidades() -> None:
+    _territorio.DISTRICTS_FILE = DISTRICTS_FILE
+    _clear_territorial_cache_if_needed()
+    _territorio.vista_mapa_necesidades_territorial()

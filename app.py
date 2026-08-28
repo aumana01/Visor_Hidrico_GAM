@@ -10,7 +10,7 @@ import seguimiento_necesidades_v2 as _seguimiento
 from territorio_seguimiento_patch import territory_by_need as _territory_by_need
 from ajustes_vistas_32_33 import apply_patches as _apply_patches
 import seguimiento_necesidades_v3 as _seguimiento_v3
-import reagrupamiento_mideplan as _mideplan
+import reagrupamiento_mideplan_v2 as _mideplan
 
 # La Vista 3.3 consume primero el mismo geoproceso vivo de la Vista 3.2 y usa
 # Supabase como respaldo.

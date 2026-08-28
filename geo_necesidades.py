@@ -29,6 +29,54 @@ _territorio.province_name = _dta.province_name
 _territorio.canton_name = _dta.canton_name
 _territorio.district_name = _dta.district_name
 
+# Conserva una referencia a la sincronización RPC original. Algunas instancias de
+# Supabase tienen habilitada la protección safeupdate y rechazan el DELETE sin
+# WHERE de una versión anterior de sql/08. La función resiliente intenta primero
+# la RPC y, únicamente ante ese error específico, hace el reemplazo por la API
+# usando un DELETE con filtro explícito.
+_original_sync_crosswalk = _territorio_base.sync_crosswalk_to_supabase
+
+
+def _sync_crosswalk_resilient(crosswalk):
+    ok, message = _original_sync_crosswalk(crosswalk)
+    if ok:
+        return ok, message
+
+    if crosswalk is None or getattr(crosswalk, "empty", True):
+        return ok, message
+
+    if "DELETE requires a WHERE clause" not in str(message):
+        return ok, message
+
+    client = _territorio_base.get_supabase_client()
+    if client is None:
+        return ok, message
+
+    records = crosswalk.where(crosswalk.notna(), None).to_dict(orient="records")
+    try:
+        # sistema_codigo es NOT NULL, por lo que != '' cubre todas las filas
+        # válidas y satisface el requisito de un WHERE explícito en PostgREST.
+        client.table("sistemas_territorios").delete().neq("sistema_codigo", "").execute()
+        if records:
+            client.table("sistemas_territorios").upsert(records).execute()
+    except Exception as exc:
+        return False, (
+            "El geoproceso funciona en memoria, pero no fue posible persistir "
+            "las relaciones territoriales en Supabase. Ejecute "
+            "`sql/10_reparar_persistencia_territorial.sql`. Detalle: "
+            f"{exc}"
+        )
+
+    digest = _territorio_base._crosswalk_hash(crosswalk)
+    st.session_state["_territorial_crosswalk_synced"] = digest
+    return True, (
+        "Relaciones sistema–territorio sincronizadas en Supabase "
+        "mediante el mecanismo de contingencia."
+    )
+
+
+_territorio_base.sync_crosswalk_to_supabase = _sync_crosswalk_resilient
+
 
 def _geodata_signature() -> tuple[tuple[str, int, int], ...]:
     paths = [DISTRICTS_FILE, *sorted(GEO_DIR.glob("sistemas_*.json"))]

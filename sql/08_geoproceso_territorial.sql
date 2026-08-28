@@ -4,8 +4,11 @@
 --
 -- El cálculo geométrico se realiza en Streamlit con:
 --   cobertura (%) = área(intersección sistema, unidad administrativa)
---                  / área(unidad administrativa) * 100
--- y solo se sincronizan relaciones con cobertura > 10%.
+--                  / área(total de la cobertura del sistema) * 100
+-- y solo se sincronizan relaciones con cobertura > 10% de la huella del sistema.
+-- Si por fragmentación ninguna unidad supera el umbral, la aplicación puede
+-- conservar la unidad territorial dominante con umbral 0 para no dejar el sistema
+-- sin asociación administrativa.
 --
 -- La tabla guarda el catálogo sistema-territorio. La vista asocia automáticamente
 -- las necesidades actuales y futuras mediante public.necesidades_sistemas.
@@ -45,7 +48,7 @@ comment on table public.sistemas_territorios is
   'Relación derivada por geoproceso entre coberturas de sistemas de abastecimiento y cantones/distritos.';
 
 comment on column public.sistemas_territorios.porcentaje_cobertura is
-  'Porcentaje del área de la unidad administrativa cubierto por el sistema.';
+  'Porcentaje de la huella total del sistema que se localiza dentro de la unidad administrativa.';
 
 create or replace function public.replace_sistemas_territorios(
   p_rows jsonb
@@ -58,7 +61,12 @@ begin
     raise exception 'p_rows debe ser un arreglo JSON';
   end if;
 
-  delete from public.sistemas_territorios;
+  -- Supabase/PostgREST puede tener activada la protección safeupdate, que
+  -- rechaza DELETE sin WHERE aun dentro de una función RPC. sistema_codigo es
+  -- NOT NULL, por lo que esta condición elimina todo el catálogo de forma segura
+  -- y satisface la exigencia de un predicado explícito.
+  delete from public.sistemas_territorios
+  where sistema_codigo is not null;
 
   insert into public.sistemas_territorios (
     sistema_codigo,

@@ -141,6 +141,18 @@ def territory_by_need(needs: pd.DataFrame) -> dict[int, dict[str, list[str]]]:
     en el Banco de Ideas.
     """
     persisted = _persisted_territory()
+
+    # La vista de Supabase devuelve una fila por necesidad, incluso cuando una
+    # de ellas todavía no tiene territorio asociado. Si el conjunto está
+    # completo, reutilizarlo evita cargar GeoJSON y repetir intersecciones en
+    # cada visita a 3.3. El geoproceso vivo queda como contingencia real.
+    expected_ids = {
+        int(raw_id)
+        for raw_id in pd.to_numeric(needs.get("id"), errors="coerce").dropna()
+    }
+    if expected_ids and expected_ids.issubset(persisted):
+        return {nid: persisted[nid] for nid in expected_ids}
+
     generated: dict[int, dict[str, list[str]]] = {}
 
     try:

@@ -8,6 +8,7 @@ import streamlit as st
 
 import seguimiento_necesidades_v2 as base
 from ajustes_vistas_32_33 import STRICT_DISPLAY_COLUMNS
+from database import data_revision
 
 
 # Orden de la Vista 3.3. Se conservan las 24 columnas institucionales y se
@@ -141,7 +142,11 @@ def _compact_communities(existing: object, need_row: pd.Series | None, geo_row: 
     return ", ".join(cleaned[:8])
 
 
-def _prepare_work() -> pd.DataFrame:
+@st.cache_data(show_spinner=False, ttl=120)
+def _prepare_work(revision: int) -> pd.DataFrame:
+    # ``revision`` forma parte de la llave de caché. La capa de datos la aumenta
+    # después de cualquier inserción, edición o eliminación hecha por la app.
+    del revision
     work = base._prepare_work()
     if work.empty:
         return work
@@ -205,7 +210,7 @@ def vista_seguimiento_necesidades() -> None:
         "Incluye ID, categoría/clasificación y los campos institucionales del Banco de Ideas."
     )
 
-    work = _prepare_work()
+    work = _prepare_work(data_revision())
     if work.empty:
         st.warning("No hay necesidades disponibles para seguimiento.")
         return
@@ -370,22 +375,25 @@ def vista_seguimiento_necesidades() -> None:
         "estado_sistema_bh",
     ]
 
-    edited = st.data_editor(
-        editor,
-        use_container_width=True,
-        hide_index=True,
-        height=700,
-        num_rows="fixed",
-        disabled=disabled,
-        column_config=_column_config(),
-        key="editor_banco_ideas_aya_v4",
-    )
+    # El formulario agrupa las ediciones. Sin él, cada cambio de una celda
+    # vuelve a ejecutar y renderizar toda la vista de más de treinta columnas.
+    with st.form("form_banco_ideas_aya_v5", border=False):
+        edited = st.data_editor(
+            editor,
+            use_container_width=True,
+            hide_index=True,
+            height=700,
+            num_rows="fixed",
+            disabled=disabled,
+            column_config=_column_config(),
+            key="editor_banco_ideas_aya_v5",
+        )
+        save_requested = st.form_submit_button(
+            "Guardar cambios de seguimiento",
+            type="primary",
+        )
 
-    if st.button(
-        "Guardar cambios de seguimiento",
-        type="primary",
-        key="guardar_banco_ideas_aya_v4",
-    ):
+    if save_requested:
         try:
             base._save_tracking(edited)
         except Exception as exc:
@@ -395,5 +403,6 @@ def vista_seguimiento_necesidades() -> None:
                 f"Detalle: {exc}"
             )
         else:
+            _prepare_work.clear()
             st.success("Seguimiento del Banco de Ideas guardado correctamente.")
             st.rerun()

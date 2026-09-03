@@ -207,54 +207,61 @@ NECESIDAD_EDITOR_COLS = [
     "responsabilidad_atencion",
 ]
 
-st.set_page_config(
-    page_title="GAM Hídrico | Proyectos y Necesidades",
-    page_icon="💧",
-    layout="wide",
-    initial_sidebar_state="expanded",
-)
+def configure_page() -> None:
+    """Configura la página y vuelve a inyectar el tema en cada rerun.
 
-st.markdown(
-    f"""
-    <style>
-    .main .block-container {{padding-top: 1.2rem;}}
-    .aya-title {{
-        background: linear-gradient(90deg, {AYA_AZUL}, #0B4B8C);
-        color: white;
-        padding: 1.1rem 1.3rem;
-        border-radius: 16px;
-        border-left: 8px solid {AYA_DORADO};
-        margin-bottom: 1rem;
-    }}
-    .aya-title h1 {{margin: 0; font-size: 1.7rem;}}
-    .aya-title p {{margin: .25rem 0 0 0; opacity: .9;}}
-    div[data-testid="stMetric"] {{
-        background-color: white;
-        border: 1px solid #E7EAF0;
-        padding: 0.8rem;
-        border-radius: 14px;
-        box-shadow: 0 1px 3px rgba(0,0,0,.04);
-    }}
-    .section-card {{
-        background: {AYA_GRIS};
-        border: 1px solid #E8EDF5;
-        padding: 1rem;
-        border-radius: 16px;
-    }}
-    .aya-card {{
-        background: white;
-        border: 1px solid #E7EAF0;
-        border-left: 6px solid {AYA_DORADO};
-        padding: .95rem 1rem;
-        border-radius: 16px;
-        margin-bottom: .8rem;
-        box-shadow: 0 2px 6px rgba(0,0,0,.06);
-        min-height: 178px;
-    }}
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
+    Streamlit reconstruye el documento del navegador después de cada interacción,
+    mientras que Python conserva los módulos importados. Por eso este bloque no
+    debe ejecutarse una sola vez durante el import de ``app_core``.
+    """
+    st.set_page_config(
+        page_title="GAM Hídrico | Proyectos y Necesidades",
+        page_icon="💧",
+        layout="wide",
+        initial_sidebar_state="expanded",
+    )
+
+    st.markdown(
+        f"""
+        <style>
+        .main .block-container {{padding-top: 1.2rem;}}
+        .aya-title {{
+            background: linear-gradient(90deg, {AYA_AZUL}, #0B4B8C);
+            color: white;
+            padding: 1.1rem 1.3rem;
+            border-radius: 16px;
+            border-left: 8px solid {AYA_DORADO};
+            margin-bottom: 1rem;
+        }}
+        .aya-title h1 {{margin: 0; font-size: 1.7rem;}}
+        .aya-title p {{margin: .25rem 0 0 0; opacity: .9;}}
+        div[data-testid="stMetric"] {{
+            background-color: white;
+            border: 1px solid #E7EAF0;
+            padding: 0.8rem;
+            border-radius: 14px;
+            box-shadow: 0 1px 3px rgba(0,0,0,.04);
+        }}
+        .section-card {{
+            background: {AYA_GRIS};
+            border: 1px solid #E8EDF5;
+            padding: 1rem;
+            border-radius: 16px;
+        }}
+        .aya-card {{
+            background: white;
+            border: 1px solid #E7EAF0;
+            border-left: 6px solid {AYA_DORADO};
+            padding: .95rem 1rem;
+            border-radius: 16px;
+            margin-bottom: .8rem;
+            box-shadow: 0 2px 6px rgba(0,0,0,.06);
+            min-height: 178px;
+        }}
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
 
 
 def title() -> None:
@@ -3154,6 +3161,7 @@ def admin_sidebar() -> None:
 
 
 def main() -> None:
+    configure_page()
     title()
     admin_sidebar()
 

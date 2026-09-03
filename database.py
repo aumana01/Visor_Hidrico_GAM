@@ -39,6 +39,7 @@ TABLE_FILES: dict[str, str] = {
 
 ID_TABLES = {"proyectos", "necesidades", "necesidades_ubicaciones", "necesidades_sistemas"}
 NATURAL_KEY_TABLES = {"necesidades_seguimiento": "necesidad_id"}
+_DATA_REVISION = 0
 
 
 def _get_secret(name: str, default: str | None = None) -> str | None:
@@ -129,7 +130,7 @@ def _coerce_known_types(table: str, df: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
-@st.cache_data(show_spinner=False)
+@st.cache_data(show_spinner=False, ttl=120)
 def read_table(table: str) -> pd.DataFrame:
     """Read a full table from Supabase or local CSV fallback."""
     client = get_supabase_client()
@@ -147,6 +148,7 @@ def read_table(table: str) -> pd.DataFrame:
         return _coerce_known_types(table, _read_csv(table))
 
 
+@st.cache_data(show_spinner=False, ttl=120)
 def read_optional_table(table: str) -> pd.DataFrame:
     """Read an optional table without interrupting the UI if it is not deployed yet."""
     client = get_supabase_client()
@@ -194,8 +196,16 @@ def _records_for_supabase(df: pd.DataFrame) -> list[dict[str, Any]]:
     return records
 
 
+def data_revision() -> int:
+    """Versión en memoria para invalidar vistas consolidadas tras una escritura."""
+    return _DATA_REVISION
+
+
 def clear_cache() -> None:
+    global _DATA_REVISION
+    _DATA_REVISION += 1
     read_table.clear()
+    read_optional_table.clear()
 
 
 def reset_local_runtime(tables: Iterable[str] | None = None) -> list[str]:

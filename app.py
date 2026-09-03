@@ -23,6 +23,9 @@ _app.vista_seguimiento_necesidades = _seguimiento_v3.vista_seguimiento_necesidad
 
 def main() -> None:
     """Navegación principal, extendida únicamente con la Vista 3.4."""
+    # Debe ejecutarse en cada rerun. Si el CSS vive solamente en app_core, el
+    # caché de imports de Python hace que Streamlit pierda el diseño al interactuar.
+    _app.configure_page()
     _app.title()
     _app.admin_sidebar()
 

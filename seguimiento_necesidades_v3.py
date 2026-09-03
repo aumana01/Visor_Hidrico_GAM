@@ -23,6 +23,7 @@ DISPLAY_COLUMNS = [
     "unidad_formula_idea",
     "posible_fuente_financiamiento",
     "idea_proyecto",
+    "descripcion_idea",
     *STRICT_DISPLAY_COLUMNS,
 ]
 
@@ -324,6 +325,7 @@ def vista_seguimiento_necesidades() -> None:
             "unidad_formula_idea",
             "posible_fuente_financiamiento",
             "idea_proyecto",
+            "descripcion_idea",
             "memo_formulario_necesidad",
             "ubicacion_provincia",
             "ubicacion_canton",
@@ -365,6 +367,7 @@ def vista_seguimiento_necesidades() -> None:
         "id_necesidad",
         "categoria_clasificacion",
         "idea_proyecto",
+        "descripcion_idea",
         "ubicacion_provincia",
         "ubicacion_canton",
         "distritos",

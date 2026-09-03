@@ -144,7 +144,7 @@ def _compact_communities(existing: object, need_row: pd.Series | None, geo_row: 
 
 
 @st.cache_data(show_spinner=False, ttl=120)
-def _prepare_work(revision: int) -> pd.DataFrame:
+def _prepare_work_cached(revision: int) -> pd.DataFrame:
     # ``revision`` forma parte de la llave de caché. La capa de datos la aumenta
     # después de cualquier inserción, edición o eliminación hecha por la app.
     del revision
@@ -185,6 +185,11 @@ def _prepare_work(revision: int) -> pd.DataFrame:
     return work
 
 
+def _prepare_work() -> pd.DataFrame:
+    """Devuelve la matriz vigente conservando la interfaz usada por 3.3 y 3.4."""
+    return _prepare_work_cached(data_revision())
+
+
 def _column_config() -> dict:
     config = base._column_config()
     config.update(
@@ -211,7 +216,7 @@ def vista_seguimiento_necesidades() -> None:
         "Incluye ID, categoría/clasificación y los campos institucionales del Banco de Ideas."
     )
 
-    work = _prepare_work(data_revision())
+    work = _prepare_work()
     if work.empty:
         st.warning("No hay necesidades disponibles para seguimiento.")
         return
@@ -406,6 +411,6 @@ def vista_seguimiento_necesidades() -> None:
                 f"Detalle: {exc}"
             )
         else:
-            _prepare_work.clear()
+            _prepare_work_cached.clear()
             st.success("Seguimiento del Banco de Ideas guardado correctamente.")
             st.rerun()

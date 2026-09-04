@@ -88,6 +88,7 @@ streamlit run app.py
 
 - La población beneficiada estimada se calcula en nuevos registros con la fórmula indicada en el requerimiento: `caudal_temporal_lps * 79.6 * 3.1`, redondeada hacia arriba.
 - Para el análisis de capacidad de la Vista 2, el caudal de proyecto usado es únicamente `expectativa_caudal_lps` (caudal esperado). `caudal_temporal_lps` se conserva como dato informativo, pero no impacta el balance por cluster.
+- La Vista 1 permite registrar el `caudal_revisado_lps`, muestra su última fecha de revisión y conserva cada cambio en `proyectos_caudal_historial`. Antes de usar esta función en Supabase, ejecute `sql/11_historial_caudal_revisado.sql` una sola vez en el SQL Editor.
 - El efecto se aplica acumulativamente desde `anio_efecto` hasta 2040.
 - Los subtotales de cluster no se toman como fijos: se recalculan dinámicamente para permitir validar el efecto de proyectos incorporados.
 

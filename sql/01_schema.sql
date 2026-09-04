@@ -21,6 +21,8 @@ create table if not exists public.proyectos (
   fin_perforacion text,
   tipo_incorporacion text,
   expectativa_caudal_lps double precision,
+  caudal_revisado_lps double precision,
+  fecha_revision_caudal timestamptz,
   caudal_temporal_lps double precision,
   poblacion_beneficiada_estimada double precision,
   anio_incorporacion_texto text,

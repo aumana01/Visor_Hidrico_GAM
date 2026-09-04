@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import re
 import unicodedata
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -24,6 +25,7 @@ LOCAL_DIR.mkdir(exist_ok=True)
 
 TABLE_FILES: dict[str, str] = {
     "proyectos": "proyectos_seed.csv",
+    "proyectos_caudal_historial": "proyectos_caudal_historial_seed.csv",
     "necesidades_ubicaciones": "necesidades_ubicaciones_seed.csv",
     "necesidades_sistemas": "necesidades_sistemas_seed.csv",
     "necesidades_seguimiento": "necesidades_seguimiento_seed.csv",
@@ -103,6 +105,8 @@ def _coerce_known_types(table: str, df: pd.DataFrame) -> pd.DataFrame:
         "latitud",
         "longitud",
         "expectativa_caudal_lps",
+        "caudal_revisado_lps",
+        "caudal_anterior_lps",
         "caudal_temporal_lps",
         "poblacion_beneficiada_estimada",
         "anio_efecto",
@@ -112,6 +116,7 @@ def _coerce_known_types(table: str, df: pd.DataFrame) -> pd.DataFrame:
         "volumen_estimado_m3",
         "km_estimado",
         "necesidad_id",
+        "proyecto_id",
     }
 
     bool_cols = {"activo_en_capacidad", "activo"}
@@ -349,6 +354,37 @@ def upsert_rows(table: str, df: pd.DataFrame) -> pd.DataFrame:
 
     current = _coerce_known_types(table, _read_csv(table))
 
+    # En modo local se replica el trigger de Supabase: solo una variación real
+    # del caudal revisado genera fecha e histórico.
+    local_history_rows: list[dict[str, Any]] = []
+    if table == "proyectos" and "caudal_revisado_lps" in df.columns:
+        now_iso = datetime.now(timezone.utc).isoformat()
+        current_by_id = {}
+        if not current.empty and "id" in current.columns:
+            current_by_id = {
+                str(row.get("id")): row for row in current.to_dict(orient="records")
+            }
+        if "fecha_revision_caudal" not in df.columns:
+            df["fecha_revision_caudal"] = None
+        for idx in df.index:
+            project_id = df.at[idx, "id"] if "id" in df.columns else None
+            old_row = current_by_id.get(str(project_id), {})
+            old_value = pd.to_numeric(old_row.get("caudal_revisado_lps"), errors="coerce")
+            new_value = pd.to_numeric(df.at[idx, "caudal_revisado_lps"], errors="coerce")
+            changed = (pd.isna(old_value) != pd.isna(new_value)) or (
+                pd.notna(old_value) and pd.notna(new_value) and float(old_value) != float(new_value)
+            )
+            if changed:
+                df.at[idx, "fecha_revision_caudal"] = now_iso
+                local_history_rows.append(
+                    {
+                        "proyecto_id": project_id,
+                        "caudal_anterior_lps": None if pd.isna(old_value) else float(old_value),
+                        "caudal_revisado_lps": None if pd.isna(new_value) else float(new_value),
+                        "fecha_revision": now_iso,
+                    }
+                )
+
     if table in ID_TABLES:
         df = _assign_missing_ids(table, df, client=None)
 
@@ -370,6 +406,10 @@ def upsert_rows(table: str, df: pd.DataFrame) -> pd.DataFrame:
         combined = pd.concat([current, df], ignore_index=True) if not current.empty else df
 
     combined.to_csv(_runtime_file(table), index=False, encoding="utf-8-sig")
+    if local_history_rows:
+        history = _read_csv("proyectos_caudal_historial")
+        history = pd.concat([history, pd.DataFrame(local_history_rows)], ignore_index=True)
+        history.to_csv(_runtime_file("proyectos_caudal_historial"), index=False, encoding="utf-8-sig")
     clear_cache()
     return df
 

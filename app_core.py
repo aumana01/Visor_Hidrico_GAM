@@ -889,6 +889,8 @@ def vista_proyectos() -> None:
             "fin_perforacion",
             "tipo_incorporacion",
             "expectativa_caudal_lps",
+            "caudal_revisado_lps",
+            "fecha_revision_caudal",
             "caudal_temporal_lps",
             "poblacion_beneficiada_estimada",
             "anio_incorporacion_texto",
@@ -970,11 +972,26 @@ def vista_proyectos() -> None:
         """
     )
 
-    c1, c2, c3, c4 = st.columns(4)
+    estados_excluidos_revision = {"incorporado", "suspendido"}
+    estado_normalizado = proyectos.get("estado_iniciativa", pd.Series("", index=proyectos.index)).fillna("").astype(str).str.strip().str.casefold()
+    proyectos_revision_activos = proyectos.loc[~estado_normalizado.isin(estados_excluidos_revision)]
+    total_revisado = pd.to_numeric(
+        proyectos_revision_activos.get("caudal_revisado_lps", pd.Series(dtype=float)), errors="coerce"
+    ).sum()
+    fechas_revision = pd.to_datetime(
+        proyectos.get("fecha_revision_caudal", pd.Series(dtype=object)), errors="coerce", utc=True
+    ).dropna()
+    ultima_revision = fechas_revision.max().strftime("%d/%m/%Y") if not fechas_revision.empty else "Sin revisiones registradas"
+
+    c1, c2, c3, c4, c5 = st.columns(5)
     c1.metric("Proyectos", f"{len(proyectos):,}")
     c2.metric("Caudal temporal", format_lps(pd.to_numeric(proyectos.get("caudal_temporal_lps"), errors="coerce").sum()))
     c3.metric("Caudal esperado", format_lps(pd.to_numeric(proyectos.get("expectativa_caudal_lps"), errors="coerce").sum()))
     c4.metric("Clusters", proyectos.get("cluster", pd.Series(dtype=str)).nunique())
+    c5.metric("Caudal revisado a hoy", format_lps(total_revisado))
+    c5.caption(
+        f"Última revisión: {ultima_revision}. Excluye proyectos en estado Incorporado o Suspendido."
+    )
 
     tab_graficos, tab_mapa, tab_lista, tab_detalle, tab_nuevo = st.tabs(["Gráficos", "Mapa", "Lista editable", "Editar detalle", "Agregar proyecto"])
 
@@ -992,7 +1009,8 @@ def vista_proyectos() -> None:
         project_editor_columns = [
             "id", "accion", "bpip", "proyecto", "descripcion", "latitud", "longitud",
             "estado_iniciativa", "inicio_perforacion", "fin_perforacion", "tipo_incorporacion",
-            "expectativa_caudal_lps", "caudal_temporal_lps", "poblacion_beneficiada_estimada",
+            "expectativa_caudal_lps", "caudal_revisado_lps", "fecha_revision_caudal",
+            "caudal_temporal_lps", "poblacion_beneficiada_estimada",
             "anio_incorporacion_texto", "anio_efecto", "sistema_codigo", "sistema_nombre",
             "cluster", "beneficios", "impacto", "actividades_criticas", "dependencia_responsable",
             "estudio_hidrogeologico", "situacion_terrenos", "observaciones",
@@ -1021,6 +1039,8 @@ def vista_proyectos() -> None:
             "longitud": st.column_config.NumberColumn("Longitud", format="%.7f"),
             "expectativa_caudal_lps": st.column_config.NumberColumn("Expectativa L/s", format="%.2f"),
             "caudal_temporal_lps": st.column_config.NumberColumn("Caudal temporal L/s", format="%.2f"),
+            "caudal_revisado_lps": st.column_config.NumberColumn("Caudal revisado a hoy (L/s)", format="%.2f", min_value=0.0),
+            "fecha_revision_caudal": st.column_config.DatetimeColumn("Fecha de revisión", format="DD/MM/YYYY HH:mm", disabled=True),
         }
         edited = st.data_editor(
             filtered,
@@ -1058,11 +1078,18 @@ def vista_proyectos() -> None:
                 accion_opts = clean_options(proyectos.get("accion", pd.Series(dtype=str)), ACCION_OPTIONS)
                 accion = col_c.selectbox("Acción", accion_opts, index=option_index(accion_opts, row.get("accion")))
                 descripcion = st.text_area("Descripción", value=str(row.get("descripcion", "")), height=130)
-                col1, col2, col3, col4 = st.columns(4)
+                col1, col2, col3, col4, col5 = st.columns(5)
                 lat = col1.number_input("Latitud", value=safe_float(row.get("latitud")), format="%.7f")
                 lon = col2.number_input("Longitud", value=safe_float(row.get("longitud")), format="%.7f")
                 expectativa = col3.number_input("Expectativa de caudal (L/s)", min_value=0.0, value=safe_float(row.get("expectativa_caudal_lps")), step=1.0)
                 temporal = col4.number_input("Caudal incorporado temporal (L/s)", min_value=0.0, value=safe_float(row.get("caudal_temporal_lps")), step=1.0)
+                revisado = col5.number_input("Caudal revisado a hoy (L/s)", min_value=0.0, value=safe_float(row.get("caudal_revisado_lps")), step=1.0)
+                confirmar_revision = st.checkbox(
+                    "Registrar/actualizar este caudal revisado",
+                    help="Active esta opción para generar la fecha y una nueva entrada en el histórico."
+                )
+                fecha_actual = pd.to_datetime(row.get("fecha_revision_caudal"), errors="coerce", utc=True)
+                st.caption(f"Última revisión de este caudal: {fecha_actual.strftime('%d/%m/%Y %H:%M') if pd.notna(fecha_actual) else 'Sin revisión registrada'}")
                 col5, col6, col7, col8 = st.columns(4)
                 anio_val = pd.to_numeric(row.get("anio_efecto"), errors="coerce")
                 anio = col5.number_input("Año efecto", min_value=2024, max_value=2040, value=int(anio_val) if pd.notna(anio_val) else 2026, step=1)
@@ -1103,6 +1130,7 @@ def vista_proyectos() -> None:
                             "tipo_incorporacion": tipo,
                             "expectativa_caudal_lps": expectativa,
                             "caudal_temporal_lps": temporal,
+                            "caudal_revisado_lps": revisado if confirmar_revision else row.get("caudal_revisado_lps"),
                             "poblacion_beneficiada_estimada": math.ceil(float(temporal) * 79.6 * 3.1) if temporal else row.get("poblacion_beneficiada_estimada"),
                             "anio_incorporacion_texto": str(anio),
                             "anio_efecto": int(anio),
@@ -1121,6 +1149,28 @@ def vista_proyectos() -> None:
                     upsert_rows("proyectos", pd.DataFrame([updated]))
                     st.success("Detalle del proyecto actualizado.")
                     st.rerun()
+
+            historial = read_optional_table("proyectos_caudal_historial")
+            if not historial.empty and "proyecto_id" in historial.columns:
+                historial_proyecto = historial[
+                    pd.to_numeric(historial["proyecto_id"], errors="coerce").eq(int(selected_id))
+                ].copy()
+                if not historial_proyecto.empty:
+                    historial_proyecto["fecha_revision"] = pd.to_datetime(
+                        historial_proyecto.get("fecha_revision"), errors="coerce", utc=True
+                    )
+                    historial_proyecto = historial_proyecto.sort_values("fecha_revision", ascending=False)
+                    with st.expander("Histórico de caudales revisados", expanded=False):
+                        st.dataframe(
+                            historial_proyecto[["fecha_revision", "caudal_anterior_lps", "caudal_revisado_lps"]],
+                            use_container_width=True,
+                            hide_index=True,
+                            column_config={
+                                "fecha_revision": st.column_config.DatetimeColumn("Fecha de revisión", format="DD/MM/YYYY HH:mm"),
+                                "caudal_anterior_lps": st.column_config.NumberColumn("Caudal anterior (L/s)", format="%.2f"),
+                                "caudal_revisado_lps": st.column_config.NumberColumn("Caudal revisado (L/s)", format="%.2f"),
+                            },
+                        )
 
     with tab_nuevo:
         with st.form("form_nuevo_proyecto", clear_on_submit=True):

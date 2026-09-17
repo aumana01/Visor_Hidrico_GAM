@@ -3,14 +3,16 @@ from __future__ import annotations
 import streamlit as st
 
 # El cuerpo histórico de la aplicación se conserva en app_core.py.
-# Este punto de entrada mantiene las vistas existentes y agrega la Vista 3.4
-# como módulo independiente, de forma que el cambio sea fácil de revertir.
+# Este punto de entrada mantiene las vistas existentes y agrega las Vistas 3.4
+# y 3.5 como módulos independientes, de forma que los cambios sean reversibles.
 import app_core as _app
 import seguimiento_necesidades_v2 as _seguimiento
 from territorio_seguimiento_patch import territory_by_need as _territory_by_need
 from ajustes_vistas_32_33 import apply_patches as _apply_patches
 import seguimiento_necesidades_v3 as _seguimiento_v3
 import reagrupamiento_mideplan_v2 as _mideplan
+import fichas_planificacion as _fichas
+
 
 # La Vista 3.3 consume primero el mismo geoproceso vivo de la Vista 3.2 y usa
 # Supabase como respaldo.
@@ -22,7 +24,7 @@ _app.vista_seguimiento_necesidades = _seguimiento_v3.vista_seguimiento_necesidad
 
 
 def main() -> None:
-    """Navegación principal, extendida únicamente con la Vista 3.4."""
+    """Navegación principal extendida con las Vistas 3.4 y 3.5."""
     # Debe ejecutarse en cada rerun. Si el CSS vive solamente en app_core, el
     # caché de imports de Python hace que Streamlit pierda el diseño al interactuar.
     _app.configure_page()
@@ -54,6 +56,7 @@ def main() -> None:
     navigation_button("3.2 Mapa de Necesidades", "mapa_necesidades")
     navigation_button("3.3 Seguimiento de Necesidades", "seguimiento_necesidades")
     navigation_button("3.4 Reagrupamiento Estratégico MIDEPLAN", "reagrupamiento_mideplan")
+    navigation_button("3.5 Fichas para Planificación", "fichas_planificacion")
 
     st.sidebar.markdown("**4. Otros**")
     navigation_button(
@@ -74,6 +77,8 @@ def main() -> None:
         _seguimiento_v3.vista_seguimiento_necesidades()
     elif view == "reagrupamiento_mideplan":
         _mideplan.vista_reagrupamiento_mideplan()
+    elif view == "fichas_planificacion":
+        _fichas.vista_fichas_planificacion()
     else:
         _app.vista_lecciones()
 

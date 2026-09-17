@@ -228,6 +228,12 @@ TEMPLATE_MARKERS = {
     "fecha": ("fecha",),
 }
 
+OBSERVATION_ANCHORS = {
+    "deficiencia_produccion_observacion": "deficiencia_produccion",
+    "infraestructura_observacion": "infraestructura_condicion",
+    "exposicion_observacion": "exposicion_danos",
+}
+
 
 def _clean(value: object) -> str:
     if value is None or (isinstance(value, float) and pd.isna(value)):
@@ -639,6 +645,50 @@ def _template_xls(template_bytes: bytes, fields: dict[str, object]) -> tuple[byt
                 target[0],
                 target[1],
                 fields[key],
+            )
+            mapped += 1
+
+        # Algunas fichas ubican una celda de observación inmediatamente debajo
+        # o a la derecha del criterio. Se completa únicamente cuando la etiqueta
+        # "Observación" puede localizarse sin ambigüedad cerca de su pregunta.
+        for observation_key, anchor_key in OBSERVATION_ANCHORS.items():
+            anchor_markers = normalized_markers.get(anchor_key, ())
+            anchor_position: tuple[int, int] | None = None
+            for row in range(read_sheet.nrows):
+                for col in range(read_sheet.ncols):
+                    cell_text = _norm(read_sheet.cell_value(row, col))
+                    if cell_text and any(marker in cell_text for marker in anchor_markers):
+                        anchor_position = (row, col)
+                        break
+                if anchor_position:
+                    break
+            if not anchor_position:
+                continue
+
+            observation_label: tuple[int, int] | None = None
+            start_row, start_col = anchor_position
+            for row in range(start_row, min(read_sheet.nrows, start_row + 5)):
+                for col in range(start_col, read_sheet.ncols):
+                    if "observacion" in _norm(read_sheet.cell_value(row, col)):
+                        observation_label = (row, col)
+                        break
+                if observation_label:
+                    break
+            if not observation_label:
+                continue
+
+            target = _target_cell(read_sheet, *observation_label)
+            if target in used_targets:
+                continue
+            used_targets.add(target)
+            _write_preserving_style(
+                read_book,
+                read_sheet,
+                write_book,
+                write_sheet,
+                target[0],
+                target[1],
+                fields.get(observation_key, ""),
             )
             mapped += 1
 

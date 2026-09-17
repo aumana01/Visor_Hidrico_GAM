@@ -88,6 +88,38 @@ def _unique(values: Iterable[str]) -> list[str]:
     return out
 
 
+_SYSTEM_CODE_RE = re.compile(
+    r"\\bME\\s*-?\\s*A\\s*-?\\s*(\\d{1,2})\\b|\\bMEA\\s*(\\d{1,2})\\b",
+    flags=re.I,
+)
+
+
+def _unique_system_population(work: pd.DataFrame) -> tuple[float, list[str], list[str]]:
+    """Suma la población una sola vez por código de sistema presente en el filtro."""
+    codes: set[str] = set()
+    labels = work.get("codigo_nombre_sistema", pd.Series(dtype=object))
+    for value in labels.fillna("").astype(str):
+        for match in _SYSTEM_CODE_RE.finditer(value):
+            digits = match.group(1) or match.group(2)
+            if digits:
+                codes.add(f"MEA{int(digits):02d}")
+
+    total = 0.0
+    missing: list[str] = []
+    for code in sorted(codes):
+        system = base.SYSTEM_DATA.get(code)
+        population = pd.to_numeric(
+            system.get("poblacion") if isinstance(system, dict) else None,
+            errors="coerce",
+        )
+        if pd.isna(population):
+            missing.append(code)
+            continue
+        total += float(population)
+
+    return total, sorted(codes), missing
+
+
 def _extract_community_names(text: object) -> list[str]:
     source = base._clean_text(text)
     if not source:
@@ -354,16 +386,30 @@ def vista_seguimiento_necesidades() -> None:
         "En formulación",
         f"{int(filtered['estado_actual_aya'].eq('Formulación de Iniciativa').sum()):,}",
     )
-    with_population = pd.to_numeric(
-        filtered["poblacion_beneficiada"], errors="coerce"
-    ).fillna(0).sum()
-    m4.metric("Población asociada*", f"{with_population:,.0f}")
+    unique_population, unique_system_codes, missing_population_codes = (
+        _unique_system_population(filtered)
+    )
+    m4.metric(
+        "Población asociada*",
+        f"{unique_population:,.0f}",
+        help=(
+            f"Suma de {len(unique_system_codes)} sistema(s) único(s) presentes "
+            "en el resultado filtrado."
+        ),
+    )
 
     st.caption(
-        "* Población y servicios se estiman con la información del sistema o sistemas asociados. "
+        "* La población asociada se suma una sola vez por código de sistema único presente "
+        "en el resultado filtrado; no se vuelve a sumar por cada necesidad. "
         "Comunidades muestra únicamente nombres específicos recuperables de las ubicaciones o "
         "descripciones; no se asume que todas las comunidades de un distrito sean beneficiarias."
     )
+    if missing_population_codes:
+        st.warning(
+            "No se encontró población de referencia para: "
+            + ", ".join(missing_population_codes)
+            + ". Estos sistemas no se incluyeron en el total."
+        )
 
     st.markdown("##### Banco de Ideas de Proyectos AyA")
     editor = filtered[["necesidad_id", *DISPLAY_COLUMNS]].copy().set_index("necesidad_id")

@@ -32,6 +32,7 @@ DEFAULT_TEMPLATE_PATH = (
     / "data"
     / "Plant_Necesidad_Inversion_Acueducto.xls"
 )
+FICHA_MODEL_VERSION = "ficha35-2026.2"
 
 POPULATION_BY_SYSTEM = {
     "MEA01": 464344.592,
@@ -351,6 +352,188 @@ def _context(trace: pd.DataFrame, terms: tuple[str, ...], fallback: str) -> str:
     return joined[:1800] if joined else fallback
 
 
+def _solution_profile(project: pd.Series) -> tuple[str, str]:
+    """Devuelve los componentes técnicos y el propósito según la cartera 3.4."""
+    family = _norm(project.get("familia_estrategica"))
+
+    profiles = [
+        (
+            ("gestion ambiental", "lodos", "plantas potabilizadoras"),
+            (
+                "la construcción y puesta en operación de obras para recolectar y tratar las aguas residuales "
+                "del proceso de potabilización, manejar y disponer adecuadamente los lodos generados y recuperar "
+                "o recircular el agua técnicamente aprovechable",
+                "reducir los impactos ambientales de la operación de las plantas, mejorar el aprovechamiento del "
+                "agua y asegurar una gestión controlada de los residuos del proceso",
+            ),
+        ),
+        (
+            ("almacenamiento", "regulacion"),
+            (
+                "la construcción, ampliación o rehabilitación de tanques de almacenamiento, junto con sus obras "
+                "de conexión, control, medición y seguridad operativa",
+                "incrementar la reserva y la capacidad de regulación, mejorar la continuidad del servicio y brindar "
+                "mayor flexibilidad ante variaciones de producción, demanda o contingencias",
+            ),
+        ),
+        (
+            ("estudios para seguridad hidrica", "hidrogeolog"),
+            (
+                "la ejecución coordinada de estudios hidrogeológicos, prospecciones, análisis de disponibilidad, "
+                "evaluaciones de calidad y demás investigaciones requeridas para identificar nuevas fuentes",
+                "reducir la incertidumbre técnica sobre el recurso disponible y sustentar la selección de alternativas "
+                "para aumentar la seguridad hídrica de los sectores críticos",
+            ),
+        ),
+        (
+            ("fuentes y produccion",),
+            (
+                "el desarrollo, rehabilitación o ampliación de fuentes, captaciones y campos de pozos, incluyendo "
+                "las obras hidráulicas, electromecánicas, eléctricas, de control y protección necesarias",
+                "incorporar o recuperar capacidad de producción y disminuir la brecha entre la oferta disponible y "
+                "la demanda de los sistemas beneficiados",
+            ),
+        ),
+        (
+            ("infraestructura troncal", "interconexion"),
+            (
+                "la construcción o mejora de aducciones, conducciones, interconexiones y trasvases, con sus accesorios, "
+                "válvulas, estructuras de control y obras complementarias",
+                "transportar y redistribuir el recurso con mayor confiabilidad, aprovechar excedentes disponibles y "
+                "aumentar la redundancia entre fuentes, plantas, tanques y sistemas",
+            ),
+        ),
+        (
+            ("bombeo", "energia"),
+            (
+                "la rehabilitación, ampliación o sustitución de estaciones de bombeo y sus sistemas electromecánicos, "
+                "eléctricos, de respaldo, automatización, protección y control",
+                "mejorar la confiabilidad y eficiencia del bombeo, reducir el riesgo de interrupciones y asegurar la "
+                "entrega de caudal y presión requeridos",
+            ),
+        ),
+        (
+            ("potabilizacion", "calidad"),
+            (
+                "la ampliación y modernización de los procesos y unidades de tratamiento, incluyendo obras civiles, "
+                "equipamiento, dosificación, desinfección, control de calidad e instrumentación",
+                "aumentar la capacidad y confiabilidad de la potabilización y asegurar el cumplimiento sostenido de "
+                "los parámetros de calidad del agua",
+            ),
+        ),
+        (
+            ("redes y continuidad",),
+            (
+                "la renovación, sustitución, ampliación y sectorización de redes de distribución, junto con válvulas, "
+                "regulación de presión, interconexiones y elementos de control",
+                "mejorar la continuidad, presión y capacidad hidráulica, reducir la vulnerabilidad de las redes y "
+                "disminuir las pérdidas reales de agua",
+            ),
+        ),
+        (
+            ("inteligencia operacional",),
+            (
+                "la adquisición, instalación e integración de macromedidores, sensores, telemetría, automatización, "
+                "sistemas de supervisión y plataformas para el análisis operacional",
+                "fortalecer el conocimiento en tiempo real de los sistemas, mejorar el control operativo y sustentar "
+                "decisiones sobre producción, distribución, presiones y pérdidas de agua",
+            ),
+        ),
+        (
+            ("habilitacion legal", "predial"),
+            (
+                "el levantamiento, diagnóstico y regularización de propiedades, servidumbres y derechos de paso "
+                "asociados con infraestructura existente o requerida",
+                "brindar seguridad jurídica y disponibilidad predial a las obras, disminuir restricciones para su "
+                "operación y facilitar la formulación y ejecución de futuras inversiones",
+            ),
+        ),
+        (
+            ("recoleccion de aguas residuales",),
+            (
+                "la construcción, ampliación o rehabilitación de redes sanitarias, colectores, interceptores, "
+                "estaciones y obras complementarias de conducción",
+                "ampliar la cobertura y confiabilidad de la recolección de aguas residuales y reducir los riesgos "
+                "sanitarios y ambientales en las áreas beneficiadas",
+            ),
+        ),
+        (
+            ("tratamiento de aguas residuales",),
+            (
+                "la construcción, ampliación o rehabilitación de plantas y sistemas para el tratamiento y disposición "
+                "de aguas residuales, incluyendo sus procesos, equipos y obras auxiliares",
+                "mejorar el desempeño sanitario y ambiental, aumentar la capacidad de tratamiento y asegurar una "
+                "disposición final conforme con la normativa aplicable",
+            ),
+        ),
+        (
+            ("resiliencia",),
+            (
+                "la rehabilitación, estabilización y protección de infraestructura estratégica expuesta a amenazas "
+                "naturales, fallas estructurales o daños de terceros",
+                "reducir la vulnerabilidad de los activos, preservar la continuidad del servicio y aumentar la "
+                "capacidad de respuesta y recuperación ante eventos adversos",
+            ),
+        ),
+    ]
+
+    for terms, profile in profiles:
+        if any(_norm(term) in family for term in terms):
+            return profile
+
+    return (
+        "la formulación y ejecución coordinada de las obras, equipos, estudios y acciones complementarias "
+        "identificadas para los sistemas asociados",
+        "resolver de manera integral las restricciones técnicas registradas, fortalecer la prestación del servicio "
+        "y disponer de infraestructura con mayor capacidad, confiabilidad y resiliencia",
+    )
+
+
+def _project_solution(project: pd.Series) -> str:
+    """Redacta una solución autosuficiente y orientada al propósito del proyecto."""
+    name = _clean(project.get("nombre_proyecto")) or "Proyecto de inversión para los sistemas de la GAM"
+    action, purpose = _solution_profile(project)
+    systems = _clean(project.get("sistemas_beneficiados"))
+    cantons = _clean(project.get("cantones"))
+    problem = _clean(project.get("problema_necesidad"))
+    scope = _clean(project.get("alcance_componentes"))
+
+    area_parts: list[str] = []
+    if systems:
+        area_parts.append(f"los sistemas {systems}")
+    if cantons:
+        area_parts.append(f"los cantones {cantons}")
+    area = " y en ".join(area_parts) if area_parts else "los sistemas de abastecimiento de la GAM"
+
+    paragraphs = [
+        f"Se propone desarrollar el proyecto «{name}», mediante {action} en {area}.",
+    ]
+    if scope:
+        paragraphs.append(
+            "De manera preliminar, la intervención considera los siguientes componentes y dimensiones: "
+            + scope.rstrip(".")
+            + "."
+        )
+
+    problem_text = (
+        f" La solución responde a la problemática consolidada de {problem.rstrip('.').lower()}."
+        if problem
+        else ""
+    )
+    paragraphs.append(
+        f"El propósito del proyecto es {purpose}.{problem_text} Su implementación permitirá atender de forma "
+        "programática las necesidades agrupadas, priorizando las intervenciones según su criticidad, beneficio "
+        "esperado y viabilidad técnica."
+    )
+    paragraphs.append(
+        "La configuración definitiva, el dimensionamiento, la localización y el presupuesto de las intervenciones "
+        "deberán precisarse durante la elaboración del perfil y las etapas posteriores de preinversión, mediante la "
+        "validación de alternativas, estudios básicos, disponibilidad de terrenos o servidumbres, permisos, riesgos "
+        "y estimaciones de costos conforme con los lineamientos institucionales y de MIDEPLAN."
+    )
+    return "\n\n".join(paragraphs)
+
+
 def _defaults(project: pd.Series) -> dict[str, object]:
     project_id = _clean(project.get("proyecto_id"))
     trace = _project_trace(project_id)
@@ -380,14 +563,6 @@ def _defaults(project: pd.Series) -> dict[str, object]:
         ("vulnerab", "riesgo", "evento natural", "desliz", "inund", "socav", "tercero", "inseguridad", "amenaza"),
         "La exposición deberá verificarse mediante el análisis de amenazas naturales, daños de terceros y seguridad física.",
     )
-
-    idea_solution_parts = [
-        _clean(project.get("nombre_proyecto")),
-        _clean(project.get("descripcion")),
-        f"Alcance: {_clean(project.get('alcance_componentes'))}" if _clean(project.get("alcance_componentes")) else "",
-        f"Objetivo general: {_clean(project.get('objetivo_general'))}" if _clean(project.get("objetivo_general")) else "",
-        f"Objetivos específicos: {_clean(project.get('objetivos_especificos'))}" if _clean(project.get("objetivos_especificos")) else "",
-    ]
 
     return {
         "proyecto_id": project_id,
@@ -426,7 +601,7 @@ def _defaults(project: pd.Series) -> dict[str, object]:
         "afectacion_eventos_naturales": "SI",
         "alto_grado_inseguridad": "SI",
         "mandato": "NO",
-        "idea_solucion": "\n\n".join(part for part in idea_solution_parts if part),
+        "idea_solucion": _project_solution(project),
         "estudios_basicos": (
             "La iniciativa se encuentra en etapa de identificación y preparación del perfil conforme al proceso de "
             "preinversión de MIDEPLAN. Se requiere completar y validar progresivamente los estudios técnicos básicos, "
@@ -450,6 +625,7 @@ def _signature(project: pd.Series) -> str:
             _clean(project.get("ids_asociados")),
             _clean(project.get("descripcion")),
             regroup.MODEL_VERSION,
+            FICHA_MODEL_VERSION,
         ]
     )
     return hashlib.sha1(source.encode("utf-8")).hexdigest()[:12]

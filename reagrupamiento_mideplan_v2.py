@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from collections import defaultdict
+import re
+import unicodedata
+from dataclasses import dataclass
 
 import pandas as pd
 import streamlit as st
@@ -8,300 +10,630 @@ import streamlit as st
 import reagrupamiento_mideplan as base
 
 
-# Segunda iteración del motor 3.4.
-# Regla principal: una agrupación estratégica NO puede cruzar libremente entre
-# clusters. Dentro del cluster, el usuario decide si exige coincidencia de
-# sistema, categoría, o ambos. Esto evita proyectos excesivamente amplios.
+# Vista 3.4 - modelo compacto de cartera GAM.
+#
+# El modelo anterior segmentaba primero por cluster/sistema/categoria y podia
+# producir decenas de propuestas. Esta version parte de familias de inversion
+# transversales para toda la GAM, conserva cada ID de origen y separa las
+# atenciones que razonablemente pueden tramitarse con presupuesto operativo.
 
-GROUPING_MODES = {
-    "Estricto · Cluster + sistema + categoría": "strict",
-    "Balanceado · Cluster + categoría o sistema": "balanced",
-    "Por sistema · Cluster + sistema": "system",
-    "Por categoría · Cluster + categoría": "category",
-}
-DEFAULT_MODE_LABEL = "Estricto · Cluster + sistema + categoría"
+MODEL_VERSION = "compacto-gam-2026.1"
 
-CLUSTER_BY_CODE = {
-    "MEA01": "Cluster C-1", "MEA02": "Cluster C-1", "MEA04": "Cluster C-1",
-    "MEA08": "Cluster C-1", "MEA10": "Cluster C-1", "MEA13": "Cluster C-1",
-    "MEA20": "Cluster C-1", "MEA22": "Cluster C-1", "MEA28": "Cluster C-1",
-    "MEA15": "Cluster C-2", "MEA17": "Cluster C-2",
-    "MEA03": "Cluster C-3", "MEA06": "Cluster C-3", "MEA07": "Cluster C-3",
-    "MEA09": "Cluster C-3", "MEA16": "Cluster C-3", "MEA19": "Cluster C-3",
-    "MEA23": "Cluster C-3", "MEA25": "Cluster C-3",
-    "MEA14": "Cluster C-4", "MEA21": "Cluster C-4",
-    "MEA12": "Cluster C-5", "MEA26": "Cluster C-5", "MEA31": "Cluster C-5",
-    "MEA05": "Cluster C-6", "MEA11": "Cluster C-6", "MEA18": "Cluster C-6",
-    "MEA24": "Cluster C-6", "MEA27": "Cluster C-6", "MEA29": "Cluster C-6",
-    "MEA30": "Cluster C-6",
+THRESHOLDS_2026 = {
+    "Bienes y servicios": {
+        "mayor": 309_887_014.0,
+        "menor": 77_471_753.0,
+    },
+    "Obras": {
+        "mayor": 1_112_414_922.0,
+        "menor": 278_103_730.0,
+    },
 }
 
-_ORIGINAL_NEED_FEATURES = base._need_features
-_ORIGINAL_PAIR_SCORE = base._pair_score
-_ORIGINAL_BUILD_GROUPS = base.build_groups
-_ORIGINAL_PROJECT_CONFIG = base._project_column_config
-_ORIGINAL_FILTER_PROJECTS = base._filter_projects
-_ORIGINAL_VIEW = base.vista_reagrupamiento_mideplan
 
-# Metadatos del cálculo vigente, indexados por ID de necesidad.
-_META_BY_ID: dict[int, dict[str, object]] = {}
-
-
-def _mode() -> str:
-    label = st.session_state.get("mideplan_grouping_mode", DEFAULT_MODE_LABEL)
-    return GROUPING_MODES.get(label, "strict")
+@dataclass(frozen=True)
+class PortfolioRule:
+    key: str
+    name: str
+    family: str
+    contract_nature: str
+    process: str
+    patterns: tuple[str, ...]
+    description: str
 
 
-def _category_key(value: object) -> str:
-    return base._norm(value)
+# Una fila por familia equivale, como maximo, a un proyecto de inversion.
+# El orden tambien funciona como prioridad de clasificacion para evitar que una
+# necesidad termine simultaneamente en dos proyectos.
+PORTFOLIO_RULES = (
+    PortfolioRule(
+        "lodos_potabilizacion",
+        "Construccion de sistemas para tratamiento de aguas residuales, manejo de lodos y recirculacion de agua en plantas potabilizadoras de la GAM",
+        "Gestion ambiental de plantas potabilizadoras",
+        "Obras",
+        "Construccion",
+        (r"lodo.*potabil", r"potabil.*lodo", r"agua residual.*potabil", r"potabil.*agua residual", r"recircul.*agua", r"lavado de filtro", r"residuo.*planta potabil"),
+        "Integra en un solo programa las soluciones ambientales de todas las plantas potabilizadoras.",
+    ),
+    PortfolioRule(
+        "almacenamiento_gam",
+        "Construccion y ampliacion de tanques de almacenamiento y regulacion de agua potable en la GAM",
+        "Almacenamiento y regulacion",
+        "Obras",
+        "Construccion / Ampliacion",
+        (r"tanque", r"almacenamiento", r"volumen de reserva", r"regulacion"),
+        "Prioriza soluciones de 500 m3 o mas y consolida su formulacion, diseno y construccion.",
+    ),
+    PortfolioRule(
+        "estudios_hidrogeologicos",
+        "Desarrollo de estudios hidrogeologicos para identificacion y proteccion de nuevas fuentes en sectores criticos de la GAM",
+        "Estudios para seguridad hidrica",
+        "Bienes y servicios",
+        "Estudios / Preinversion",
+        (r"estudio hidrogeolog", r"investigacion hidrogeolog", r"prospeccion", r"exploracion.*acuifer", r"modelacion.*acuifer"),
+        "Agrupa los estudios de nuevas fuentes y sectores hidricamente criticos bajo una metodologia comun.",
+    ),
+    PortfolioRule(
+        "fuentes_produccion",
+        "Ampliacion y mejoramiento de fuentes, captaciones y campos de pozos para abastecimiento de la GAM",
+        "Fuentes y produccion",
+        "Obras",
+        "Ampliacion / Mejoras",
+        (r"pozo", r"naciente", r"captacion", r"fuente", r"aumento de recurso", r"increment.*produccion", r"perforacion"),
+        "Consolida intervenciones fisicas destinadas a incorporar o recuperar produccion de agua potable.",
+    ),
+    PortfolioRule(
+        "aducciones_interconexiones",
+        "Construccion y mejoramiento de aducciones, conducciones, interconexiones y trasvases estrategicos de la GAM",
+        "Infraestructura troncal e interconexion",
+        "Obras",
+        "Construccion / Mejoras",
+        (r"aduccion", r"conduccion", r"interconexion", r"trasvase", r"linea de impulsion", r"tuberia principal"),
+        "Integra obras troncales que permiten mover recurso entre fuentes, plantas, tanques y sistemas.",
+    ),
+    PortfolioRule(
+        "bombeo_electromecanico",
+        "Mejoramiento de estaciones de bombeo, impulsiones y sistemas electromecanicos estrategicos de la GAM",
+        "Bombeo y energia",
+        "Obras",
+        "Rehabilitacion / Mejoras",
+        (r"estacion de bombeo", r"sistema de bombeo", r"rebombeo", r"booster", r"equipo de bombeo", r"electromecan"),
+        "Agrupa renovacion, ampliacion y respaldo de infraestructura de bombeo de alcance estrategico.",
+    ),
+    PortfolioRule(
+        "potabilizacion",
+        "Ampliacion y modernizacion de plantas potabilizadoras y procesos de tratamiento de agua potable de la GAM",
+        "Potabilizacion y calidad",
+        "Obras",
+        "Ampliacion / Modernizacion",
+        (r"planta potabil", r"potabilizacion", r"filtracion", r"floculacion", r"sedimentacion", r"desinfeccion", r"calidad de agua"),
+        "Consolida mejoras de capacidad, confiabilidad y calidad del tratamiento de agua potable.",
+    ),
+    PortfolioRule(
+        "redes_distribucion",
+        "Renovacion, ampliacion y sectorizacion de redes de distribucion de agua potable en la GAM",
+        "Redes y continuidad del servicio",
+        "Obras",
+        "Rehabilitacion / Ampliacion",
+        (r"red de distrib", r"sustitucion.*tuber", r"renovacion.*tuber", r"ampliacion.*red", r"sectorizacion", r"valvula reguladora", r"control de presion", r"vrp"),
+        "Integra paquetes de redes con alcance multianual y priorizacion por criticidad, continuidad y perdidas.",
+    ),
+    PortfolioRule(
+        "instrumentacion",
+        "Instalacion de instrumentacion, sensores, medicion, telemetria y automatizacion para los sistemas de la GAM",
+        "Inteligencia operacional",
+        "Bienes y servicios",
+        "Equipamiento / Implementacion",
+        (r"instrumentacion", r"sensor", r"telemet", r"scada", r"caudalimet", r"macromed", r"automatizacion", r"monitoreo en linea"),
+        "Agrupa adquisicion, instalacion, integracion y puesta en marcha de instrumentacion bajo estandares comunes.",
+    ),
+    PortfolioRule(
+        "propiedades_servidumbres",
+        "Regularizacion de propiedades y servidumbres asociadas a infraestructura operativa de la GAM",
+        "Habilitacion legal y predial",
+        "Bienes y servicios",
+        "Regularizacion",
+        (r"servidumbre", r"regulariz.*propiedad", r"regulariz.*terreno", r"derecho de paso", r"catastro.*propiedad", r"afectacion predial"),
+        "Consolida levantamientos, expedientes y gestiones prediales para infraestructura existente y futura.",
+    ),
+    PortfolioRule(
+        "aguas_residuales",
+        "Construccion, ampliacion y rehabilitacion de sistemas de tratamiento de aguas residuales en la GAM",
+        "Tratamiento de aguas residuales",
+        "Obras",
+        "Construccion / Ampliacion",
+        (r"ptar", r"tratamiento de aguas residuales", r"planta de tratamiento", r"saneamiento"),
+        "Agrupa infraestructura de tratamiento y disposicion final distinta de los residuos de potabilizacion.",
+    ),
+    PortfolioRule(
+        "alcantarillado_redes",
+        "Construccion y ampliacion de redes, colectores e interceptores de alcantarillado sanitario en la GAM",
+        "Recoleccion de aguas residuales",
+        "Obras",
+        "Construccion / Ampliacion",
+        (r"alcantarillado", r"colector", r"interceptor", r"red sanitaria", r"emisario"),
+        "Integra obras de recoleccion y transporte de aguas residuales por territorio y prioridad sanitaria.",
+    ),
+    PortfolioRule(
+        "resiliencia_estructural",
+        "Rehabilitacion y proteccion de infraestructura estrategica vulnerable de los sistemas de la GAM",
+        "Resiliencia de infraestructura",
+        "Obras",
+        "Rehabilitacion",
+        (r"estabilizacion", r"proteccion.*infraestructura", r"vulnerabilidad", r"amenaza", r"deslizamiento", r"socavacion", r"reforzamiento estructural"),
+        "Consolida intervenciones mayores de rehabilitacion, estabilizacion y proteccion ante amenazas.",
+    ),
+    PortfolioRule(
+        "infraestructura_integral",
+        "Programa integral de infraestructura prioritaria para sistemas de abastecimiento de la GAM",
+        "Infraestructura integral",
+        "Obras",
+        "Mejoras",
+        tuple(),
+        "Recibe necesidades de inversion que no encajan con certeza en otra familia y exige validacion tecnica posterior.",
+    ),
+)
+
+RULE_BY_KEY = {rule.key: rule for rule in PORTFOLIO_RULES}
+MAX_PROJECTS = len(PORTFOLIO_RULES)
+
+OPERATIONAL_CATEGORIES = (
+    "mantenimiento correctivo preventivo",
+    "mantenimiento correctivo y preventivo",
+    "optimizacion",
+    "relacion con asadas y terceros",
+    "ordenamiento comercial",
+)
 
 
-def _clusters_for_systems(systems: set[str]) -> frozenset[str]:
-    clusters = {CLUSTER_BY_CODE[code] for code in systems if code in CLUSTER_BY_CODE}
-    return frozenset(clusters)
+def _fold(value: object) -> str:
+    text = base._clean(value).lower()
+    text = unicodedata.normalize("NFKD", text)
+    return "".join(ch for ch in text if not unicodedata.combining(ch))
 
 
-def _need_features(work: pd.DataFrame, raw_by_id: dict[int, pd.Series]):
-    features = _ORIGINAL_NEED_FEATURES(work, raw_by_id)
-    _META_BY_ID.clear()
-    work_reset = work.reset_index(drop=True)
-    for feature in features:
-        row = work_reset.iloc[feature.idx]
-        category_display = base._clean(row.get("categoria_clasificacion"))
-        _META_BY_ID[feature.need_id] = {
-            "clusters": _clusters_for_systems(feature.systems),
-            "category_key": _category_key(category_display),
-            "category_display": category_display or "Sin categoría",
-        }
-    return features
+def _parse_number(token: str) -> float | None:
+    value = token.replace(" ", "").strip(".,")
+    if not value:
+        return None
+    if "," in value and "." in value:
+        last_comma, last_dot = value.rfind(","), value.rfind(".")
+        decimal = "," if last_comma > last_dot else "."
+        thousands = "." if decimal == "," else ","
+        tail = value.split(decimal)[-1]
+        if len(tail) == 2:
+            value = value.replace(thousands, "").replace(decimal, ".")
+        else:
+            value = value.replace(",", "").replace(".", "")
+    elif "," in value:
+        tail = value.split(",")[-1]
+        value = value.replace(",", ".") if len(tail) == 2 else value.replace(",", "")
+    elif "." in value:
+        tail = value.split(".")[-1]
+        value = value if len(tail) == 2 else value.replace(".", "")
+    try:
+        return float(value)
+    except ValueError:
+        return None
 
 
-def _same_geographic_context(a, b) -> bool:
-    return bool(
-        (a.districts & b.districts)
-        or (a.cantons & b.cantons)
-        or (a.communities & b.communities)
+def _cost_bounds(value: object) -> tuple[float, float | None]:
+    if isinstance(value, (int, float)) and not pd.isna(value):
+        number = max(0.0, float(value))
+        return number, number
+    text = base._clean(value)
+    if not text:
+        return 0.0, None
+    numbers = [
+        number
+        for number in (_parse_number(token) for token in re.findall(r"\d[\d., ]*", text))
+        if number is not None
+    ]
+    if not numbers:
+        return 0.0, None
+    folded = _fold(text)
+    if "mas de" in folded or "mayor de" in folded or ">" in text:
+        return max(numbers), None
+    if len(numbers) >= 2:
+        return min(numbers), max(numbers)
+    return numbers[0], numbers[0]
+
+
+def _procurement_label(lower: float, upper: float | None, nature: str) -> str:
+    thresholds = THRESHOLDS_2026[nature]
+    major, minor = thresholds["mayor"], thresholds["menor"]
+    if lower >= major:
+        return "Licitacion mayor"
+    if upper is not None and upper < minor:
+        return "Licitacion reducida"
+    if lower >= minor and (upper is None or upper < major):
+        return "Licitacion menor" if upper is not None else "Licitacion menor o mayor - monto por precisar"
+    if upper is not None and lower >= minor and upper >= major:
+        return "Licitacion menor o mayor - rango cruza umbral"
+    if upper is None:
+        return "Por determinar - estimacion abierta"
+    if upper >= minor:
+        return "Licitacion reducida o menor - rango cruza umbral"
+    return "Licitacion reducida"
+
+
+def _threshold_text(nature: str) -> str:
+    values = THRESHOLDS_2026[nature]
+    return (
+        f"{nature}: mayor desde CRC {values['mayor']:,.0f}; "
+        f"menor desde CRC {values['menor']:,.0f}; reducida por debajo de ese monto"
     )
 
 
-def _pair_score(a, b) -> float:
-    if a.service != b.service:
-        return -100.0
-
-    ma = _META_BY_ID.get(a.need_id, {})
-    mb = _META_BY_ID.get(b.need_id, {})
-    clusters_a = ma.get("clusters", frozenset())
-    clusters_b = mb.get("clusters", frozenset())
-    category_a = str(ma.get("category_key", ""))
-    category_b = str(mb.get("category_key", ""))
-    same_title = bool(a.title_norm and b.title_norm and a.title_norm == b.title_norm)
-    system_overlap = bool(a.systems & b.systems)
-    same_category = bool(category_a and category_b and category_a == category_b)
-
-    # SEGREGACIÓN DURA POR CLUSTER.
-    # Una necesidad multisistema solo se compara con otra que tenga exactamente
-    # el mismo conjunto de clusters; así se evita el efecto puente del Union-Find.
-    if clusters_a != clusters_b:
-        return -100.0
-
-    # Cuando no existe sistema/cluster, no se permite una agrupación GAM-global:
-    # debe existir territorio compartido o tratarse de la misma idea.
-    if not clusters_a and not clusters_b and not same_title and not _same_geographic_context(a, b):
-        return -100.0
-
-    mode = _mode()
-    if mode == "strict":
-        # Duplicados textuales dentro del mismo cluster pueden consolidarse aun
-        # si se registraron para sistemas distintos; fuera de ese caso se exige
-        # misma categoría Y al menos un sistema compartido.
-        if not same_title and not (same_category and system_overlap):
-            return -100.0
-    elif mode == "system":
-        if not same_title and not system_overlap:
-            return -100.0
-    elif mode == "category":
-        if not same_title and not same_category:
-            return -100.0
-    else:  # balanced
-        if not same_title and not (same_category or system_overlap):
-            return -100.0
-
-    score = _ORIGINAL_PAIR_SCORE(a, b)
-
-    # Se eleva la exigencia mínima. La coincidencia de cluster es una condición,
-    # no puntos extra; aún debe existir coherencia temática/territorial/textual.
-    if same_category:
-        score += 1.0
-    if system_overlap:
-        score += 0.5
-    return score
+def _rule_for_text(text: str) -> PortfolioRule:
+    # La familia residual es la ultima y solo se usa si no hubo coincidencia.
+    for rule in PORTFOLIO_RULES[:-1]:
+        if any(re.search(pattern, text) for pattern in rule.patterns):
+            return rule
+    return PORTFOLIO_RULES[-1]
 
 
-def _group_indices(features) -> list[list[int]]:
-    # Umbrales más conservadores que la versión inicial.
-    threshold = {
-        "strict": 8.5,
-        "balanced": 9.0,
-        "system": 8.5,
-        "category": 9.0,
-    }.get(_mode(), 8.5)
-
-    uf = base._UnionFind(len(features))
-    for i in range(len(features)):
-        for j in range(i + 1, len(features)):
-            if _pair_score(features[i], features[j]) >= threshold:
-                uf.union(i, j)
-    groups: dict[int, list[int]] = defaultdict(list)
-    for i in range(len(features)):
-        groups[uf.find(i)].append(i)
-    return list(groups.values())
+def _raw_text(row: pd.Series, raw: pd.Series) -> str:
+    fields = (
+        row.get("categoria_clasificacion"), row.get("idea_proyecto"), row.get("descripcion_idea"),
+        row.get("descripcion_avance"), raw.get("objetivo_de_la_iniciativa"), raw.get("breve_descripcion"),
+        raw.get("principal_reto_por_superar"), raw.get("observacion"),
+    )
+    return _fold(" ".join(base._clean(value) for value in fields if base._clean(value)))
 
 
-def _clusters_from_labels(values: pd.Series) -> str:
-    clusters: list[str] = []
-    seen: set[str] = set()
-    for value in values.fillna("").astype(str):
-        for code in base._codes(value):
-            cluster = CLUSTER_BY_CODE.get(code)
-            if cluster and cluster not in seen:
-                seen.add(cluster)
-                clusters.append(cluster)
-    return ", ".join(sorted(clusters)) or "Sin cluster definido"
+def _is_operational_category(category: object) -> bool:
+    folded = _fold(category)
+    return any(name in folded for name in OPERATIONAL_CATEGORIES)
+
+
+def _has_explicit_investment_signal(rule: PortfolioRule, text: str, volume_m3: float | None) -> bool:
+    if rule.key in {"lodos_potabilizacion", "estudios_hidrogeologicos", "instrumentacion", "propiedades_servidumbres"}:
+        return True
+    if rule.key == "almacenamiento_gam":
+        return volume_m3 is None or volume_m3 >= 500 or any(word in text for word in ("construccion", "ampliacion", "nuevo tanque"))
+    return any(word in text for word in ("construccion", "ampliacion", "sustitucion", "renovacion", "rehabilitacion"))
+
+
+def _classify_need(row: pd.Series, raw: pd.Series) -> dict[str, object]:
+    text = _raw_text(row, raw)
+    rule = _rule_for_text(text)
+    category = row.get("categoria_clasificacion")
+    volume_raw = pd.to_numeric(raw.get("volumen_estimado_m3"), errors="coerce")
+    volume = float(volume_raw) if pd.notna(volume_raw) and float(volume_raw) > 0 else None
+    lower, upper = _cost_bounds(raw.get("costo"))
+    procurement = _procurement_label(lower, upper, rule.contract_nature)
+    major = procurement == "Licitacion mayor"
+
+    operational_reason = ""
+    if rule.key == "almacenamiento_gam" and volume is not None and volume < 500 and not major:
+        operational_reason = "Almacenamiento local menor de 500 m3; revisar atencion con presupuesto operativo."
+    elif _is_operational_category(category) and not major and not _has_explicit_investment_signal(rule, text, volume):
+        operational_reason = (
+            "Categoria susceptible de atencion operativa mediante licitacion menor o reducida; "
+            "no se incorpora automaticamente a un proyecto de inversion."
+        )
+
+    if major:
+        operational_reason = ""
+
+    return {
+        "rule": rule,
+        "route": "Atencion operativa" if operational_reason else "Proyecto de inversion",
+        "reason": operational_reason or (
+            "La necesidad requiere licitacion mayor y debe formularse como proyecto de inversion."
+            if major else rule.description
+        ),
+        "cost_lower": lower,
+        "cost_upper": upper,
+        "procurement": procurement,
+        "volume": volume,
+    }
+
+
+def _format_cost_range(lower: float, upper: float | None) -> str:
+    if upper is None:
+        return f"Desde CRC {lower:,.0f}" if lower > 0 else "Sin estimacion suficiente"
+    if abs(lower - upper) < 0.01:
+        return f"CRC {lower:,.0f}"
+    return f"CRC {lower:,.0f} a {upper:,.0f}"
+
+
+def _build_project_row(
+    rule: PortfolioRule,
+    group: pd.DataFrame,
+    raw_by_id: dict[int, pd.Series],
+) -> dict[str, object]:
+    labels, codes = base._system_names(group)
+    population, services = base._beneficiaries(codes)
+    themes: set[str] = set()
+    for _, item in group.iterrows():
+        text = " ".join([base._clean(item.get("idea_proyecto")), base._clean(item.get("descripcion_idea"))])
+        themes |= base._themes(text, base._clean(item.get("categoria_clasificacion")))
+
+    dims = {
+        "caudal_lps": base._unique_dimension(group, raw_by_id, "caudal_estimado_lps"),
+        "volumen_m3": base._unique_dimension(group, raw_by_id, "volumen_estimado_m3"),
+        "km": base._unique_dimension(group, raw_by_id, "km_estimado"),
+    }
+    ids = sorted(pd.to_numeric(group["necesidad_id"], errors="coerce").dropna().astype(int).unique().tolist())
+    provinces = base._join(v for value in group["ubicacion_provincia"] for v in base._split(value))
+    cantons = base._join(v for value in group["ubicacion_canton"] for v in base._split(value))
+    districts = base._join(v for value in group["distritos"] for v in base._split(value))
+    communities = base._join((v for value in group["comunidades"] for v in base._split(value)), limit=10)
+    bh = base._minimum_bh(group)
+    ich = base._critical_ich(group)
+    score, potential = base._potential_score(group, codes, themes, dims)
+
+    bounds = [_cost_bounds(raw_by_id.get(nid, pd.Series(dtype=object)).get("costo")) for nid in ids]
+    lower = sum(item[0] for item in bounds)
+    upper = sum(item[1] for item in bounds) if bounds and all(item[1] is not None for item in bounds) else None
+    procurement = _procurement_label(lower, upper, rule.contract_nature)
+    categories = base._join(group["categoria_clasificacion"].fillna("").astype(str).tolist())
+
+    return {
+        "proyecto_id": f"TMP-{rule.key}",
+        "nombre_proyecto": rule.name,
+        "tipologia_mideplan": rule.process,
+        "servicio": "Alcantarillado sanitario" if rule.key in {"alcantarillado_redes", "aguas_residuales"} else "Acueducto",
+        "familia_estrategica": rule.family,
+        "criterio_agrupamiento": "Cartera tematica transversal GAM",
+        "categorias_agrupadas": categories or "Sin categoria registrada",
+        "ruta_recomendada": "Proyecto de inversion",
+        "naturaleza_contrato": rule.contract_nature,
+        "procedimiento_estimado_2026": procurement,
+        "rango_costo_registrado": _format_cost_range(lower, upper),
+        "umbral_2026": _threshold_text(rule.contract_nature),
+        "ids_asociados": ", ".join(map(str, ids)),
+        "codigos_internos": base._join(group["codigo_interno"].fillna("").astype(str).tolist()),
+        "cantidad_necesidades": len(ids),
+        "sistemas_beneficiados": base._join(labels),
+        "provincias": provinces,
+        "cantones": cantons,
+        "distritos": districts,
+        "comunidades": communities,
+        "problema_necesidad": base._problem_statement(group, themes),
+        "descripcion": (
+            f"{rule.description} Consolida {len(ids)} necesidades del Banco de Ideas para su revision, "
+            "priorizacion y formulacion institucional, manteniendo la trazabilidad individual."
+        ),
+        "alcance_componentes": base._scope(themes, dims),
+        "objetivo_general": (
+            f"Desarrollar de manera programatica las intervenciones de {rule.family.lower()} requeridas en la GAM, "
+            "priorizando los sistemas con mayor criticidad y beneficio esperado."
+        ),
+        "objetivos_especificos": base._specific_objectives(themes, dims),
+        "poblacion_referencia": round(population) if population else None,
+        "servicios_referencia": round(services, 2) if services else None,
+        "caudal_lps": round(dims["caudal_lps"], 2) if dims["caudal_lps"] else None,
+        "volumen_m3": round(dims["volumen_m3"], 2) if dims["volumen_m3"] else None,
+        "km_red": round(dims["km"], 3) if dims["km"] else None,
+        "condicion_hidrica_critica": ich,
+        "estado_bh_critico": round(bh, 3) if bh is not None else None,
+        "potencial_puntos": score,
+        "potencial": potential,
+        "nivel_preinversion_sugerido": base._maturity(group),
+        "informacion_faltante": base._missing_information(group, themes, dims),
+    }
 
 
 def build_groups() -> tuple[pd.DataFrame, pd.DataFrame]:
-    projects, trace = _ORIGINAL_BUILD_GROUPS()
+    work = base.seguimiento._prepare_work()
+    if work.empty:
+        st.session_state["mideplan_operational"] = pd.DataFrame()
+        return pd.DataFrame(), pd.DataFrame()
+
+    raw = base.seguimiento.base.read_table("necesidades")
+    raw_by_id: dict[int, pd.Series] = {}
+    if not raw.empty and "id" in raw.columns:
+        for _, raw_row in raw.iterrows():
+            nid = pd.to_numeric(raw_row.get("id"), errors="coerce")
+            if pd.notna(nid):
+                raw_by_id[int(nid)] = raw_row
+
+    work = work.copy().reset_index(drop=True)
+    for field in (
+        "caudal_estimado_lps", "volumen_estimado_m3", "km_estimado", "principal_reto_por_superar",
+        "observacion", "costo", "responsabilidad_atencion",
+    ):
+        work[field] = [raw_by_id.get(int(nid), pd.Series(dtype=object)).get(field) for nid in work["necesidad_id"]]
+
+    project_positions: dict[str, list[int]] = {rule.key: [] for rule in PORTFOLIO_RULES}
+    classifications: dict[int, dict[str, object]] = {}
+    operational_rows: list[dict[str, object]] = []
+
+    for position, row in work.iterrows():
+        nid = int(row["necesidad_id"])
+        raw_row = raw_by_id.get(nid, pd.Series(dtype=object))
+        result = _classify_need(row, raw_row)
+        rule = result["rule"]
+        classifications[nid] = result
+        if result["route"] == "Proyecto de inversion":
+            project_positions[rule.key].append(position)
+        else:
+            operational_rows.append({
+                "id_necesidad": nid,
+                "categoria": base._clean(row.get("categoria_clasificacion")) or "Sin categoria",
+                "necesidad": base._clean(row.get("idea_proyecto")),
+                "sistemas": base._clean(row.get("codigo_nombre_sistema")),
+                "ruta_recomendada": result["route"],
+                "procedimiento_estimado_2026": result["procurement"],
+                "naturaleza_contrato": rule.contract_nature,
+                "costo_registrado": base._clean(raw_row.get("costo")) or "Sin dato",
+                "justificacion": result["reason"],
+            })
+
+    rows: list[dict[str, object]] = []
+    trace_parts: list[pd.DataFrame] = []
+    for rule in PORTFOLIO_RULES:
+        positions = project_positions[rule.key]
+        if not positions:
+            continue
+        group = work.iloc[positions].copy()
+        rows.append(_build_project_row(rule, group, raw_by_id))
+        trace = group.copy()
+        trace.insert(0, "proyecto_estrategico", f"TMP-{rule.key}")
+        trace.insert(1, "nombre_proyecto_estrategico", rule.name)
+        trace["ruta_modelo"] = "Proyecto de inversion"
+        trace["familia_cartera"] = rule.family
+        trace["procedimiento_estimado_2026"] = [classifications[int(nid)]["procurement"] for nid in trace["necesidad_id"]]
+        trace["justificacion_modelo"] = [classifications[int(nid)]["reason"] for nid in trace["necesidad_id"]]
+        trace_parts.append(trace)
+
+    projects = pd.DataFrame(rows)
+    operational = pd.DataFrame(operational_rows)
+    st.session_state["mideplan_operational"] = operational
+
     if projects.empty:
-        return projects, trace
+        return projects, pd.DataFrame()
 
-    projects = projects.copy()
-    if isinstance(trace, pd.DataFrame) and not trace.empty:
-        cluster_map: dict[str, str] = {}
-        category_map: dict[str, str] = {}
-        for project_id, group in trace.groupby("proyecto_estrategico"):
-            cluster_map[str(project_id)] = _clusters_from_labels(group["codigo_nombre_sistema"])
-            categories = [
-                base._clean(value)
-                for value in group.get("categoria_clasificacion", pd.Series(dtype=object)).tolist()
-                if base._clean(value)
-            ]
-            category_map[str(project_id)] = base._join(categories) or "Sin categoría"
-        projects["cluster_agrupacion"] = projects["proyecto_id"].astype(str).map(cluster_map).fillna("Sin cluster definido")
-        projects["categorias_agrupadas"] = projects["proyecto_id"].astype(str).map(category_map).fillna("Sin categoría")
-    else:
-        projects["cluster_agrupacion"] = "Sin cluster definido"
-        projects["categorias_agrupadas"] = "Sin categoría"
+    if len(projects) > MAX_PROJECTS:
+        raise RuntimeError(f"El modelo compacto excedio el maximo de {MAX_PROJECTS} proyectos.")
 
-    projects["criterio_agrupamiento"] = st.session_state.get("mideplan_grouping_mode", DEFAULT_MODE_LABEL)
+    projects = projects.sort_values(
+        ["potencial_puntos", "cantidad_necesidades", "estado_bh_critico"],
+        ascending=[False, False, True],
+        na_position="last",
+    ).reset_index(drop=True)
+    projects["orden_estrategico"] = range(1, len(projects) + 1)
+    remap = {old: f"PE-{index:03d}" for index, old in enumerate(projects["proyecto_id"], start=1)}
+    projects["proyecto_id"] = projects["proyecto_id"].map(remap)
+
+    traceability = pd.concat(trace_parts, ignore_index=True) if trace_parts else pd.DataFrame()
+    if not traceability.empty:
+        traceability["proyecto_estrategico"] = traceability["proyecto_estrategico"].map(remap)
+        names = dict(zip(projects["proyecto_id"], projects["nombre_proyecto"]))
+        traceability["nombre_proyecto_estrategico"] = traceability["proyecto_estrategico"].map(names)
+
+    # Las atenciones operativas tambien forman parte de la trazabilidad total,
+    # pero no inflan el numero de proyectos propuestos.
+    if not operational.empty:
+        op_ids = set(operational["id_necesidad"].astype(int).tolist())
+        op_trace = work[work["necesidad_id"].astype(int).isin(op_ids)].copy()
+        op_trace.insert(0, "proyecto_estrategico", "OPERATIVO")
+        op_trace.insert(1, "nombre_proyecto_estrategico", "Atencion con presupuesto operativo")
+        op_trace["ruta_modelo"] = "Atencion operativa"
+        op_trace["familia_cartera"] = "Gestion operativa"
+        op_trace["procedimiento_estimado_2026"] = [classifications[int(nid)]["procurement"] for nid in op_trace["necesidad_id"]]
+        op_trace["justificacion_modelo"] = [classifications[int(nid)]["reason"] for nid in op_trace["necesidad_id"]]
+        traceability = pd.concat([traceability, op_trace], ignore_index=True)
 
     front = [
-        "orden_estrategico", "proyecto_id", "nombre_proyecto", "cluster_agrupacion",
-        "categorias_agrupadas", "tipologia_mideplan", "familia_estrategica",
-        "criterio_agrupamiento",
+        "orden_estrategico", "proyecto_id", "nombre_proyecto", "familia_estrategica",
+        "ruta_recomendada", "naturaleza_contrato", "procedimiento_estimado_2026",
+        "rango_costo_registrado", "umbral_2026", "categorias_agrupadas", "tipologia_mideplan",
+        "criterio_agrupamiento", "ids_asociados", "cantidad_necesidades", "sistemas_beneficiados",
+        "provincias", "cantones", "distritos", "comunidades", "problema_necesidad", "descripcion",
+        "alcance_componentes", "objetivo_general", "objetivos_especificos", "poblacion_referencia",
+        "servicios_referencia", "caudal_lps", "volumen_m3", "km_red", "condicion_hidrica_critica",
+        "estado_bh_critico", "potencial", "potencial_puntos", "nivel_preinversion_sugerido",
+        "informacion_faltante", "servicio", "codigos_internos",
     ]
-    rest = [c for c in projects.columns if c not in front]
-    return projects[front + rest], trace
+    return projects[front], traceability
 
 
 def _project_column_config() -> dict:
-    config = _ORIGINAL_PROJECT_CONFIG()
-    config.update(
-        {
-            "cluster_agrupacion": st.column_config.TextColumn("Cluster", width="medium"),
-            "categorias_agrupadas": st.column_config.TextColumn("Categoría(s) 3.2", width="large"),
-            "criterio_agrupamiento": st.column_config.TextColumn("Criterio de agrupamiento", width="large"),
-        }
-    )
+    config = base._project_column_config_original()
+    config.update({
+        "familia_estrategica": st.column_config.TextColumn("Cartera tematica GAM", width="large"),
+        "ruta_recomendada": st.column_config.TextColumn("Ruta recomendada", width="medium"),
+        "naturaleza_contrato": st.column_config.TextColumn("Naturaleza contractual", width="medium"),
+        "procedimiento_estimado_2026": st.column_config.TextColumn("Procedimiento estimado 2026", width="large"),
+        "rango_costo_registrado": st.column_config.TextColumn("Rango agregado registrado", width="medium"),
+        "umbral_2026": st.column_config.TextColumn("Umbral AyA 2026 aplicado", width="large"),
+        "categorias_agrupadas": st.column_config.TextColumn("Categorias de origen", width="large"),
+        "criterio_agrupamiento": st.column_config.TextColumn("Criterio de agrupamiento", width="large"),
+    })
     return config
 
 
 def _filter_projects(projects: pd.DataFrame) -> pd.DataFrame:
-    # Primera línea: filtros de segregación que ahora son centrales.
-    f1, f2, f3 = st.columns([1.2, 2.0, 2.4])
-    clusters = sorted(projects["cluster_agrupacion"].dropna().astype(str).unique().tolist())
-    selected_clusters = f1.multiselect("Cluster", clusters, key="mideplan_cluster_v2")
-    categories = sorted({
-        item.strip()
-        for value in projects["categorias_agrupadas"].fillna("")
-        for item in str(value).split(",")
-        if item.strip()
-    })
-    selected_categories = f2.multiselect("Categoría 3.2", categories, key="mideplan_category_v2")
-    search = f3.text_input(
-        "Buscar",
-        placeholder="Proyecto, ID, sistema, categoría, cantón, distrito…",
-        key="mideplan_search_v2",
-    )
-
-    f4, f5, f6 = st.columns([1.1, 1.7, 1.5])
-    potential = f4.multiselect("Potencial", ["Muy alto", "Alto", "Medio", "Bajo"], key="mideplan_potential_v2")
+    f1, f2, f3, f4 = st.columns([1.1, 1.7, 1.6, 2.2])
+    potential = f1.multiselect("Potencial", ["Muy alto", "Alto", "Medio", "Bajo"], key="compact_potential")
     families = sorted(projects["familia_estrategica"].dropna().astype(str).unique().tolist())
-    selected_families = f5.multiselect("Familia estratégica", families, key="mideplan_family_v2")
-    provinces = sorted({x for value in projects["provincias"].fillna("") for x in base._split(value)})
-    selected_provinces = f6.multiselect("Provincia", provinces, key="mideplan_province_v2")
+    selected_families = f2.multiselect("Cartera tematica", families, key="compact_family")
+    procedures = sorted(projects["procedimiento_estimado_2026"].dropna().astype(str).unique().tolist())
+    selected_procedures = f3.multiselect("Contratacion 2026", procedures, key="compact_procurement")
+    search = f4.text_input("Buscar", placeholder="Proyecto, ID, sistema, categoria, canton...", key="compact_search")
 
     out = projects.copy()
-    if selected_clusters:
-        out = out[out["cluster_agrupacion"].isin(selected_clusters)]
-    if selected_categories:
-        selected_norm = {base._norm(x) for x in selected_categories}
-        out = out[out["categorias_agrupadas"].apply(
-            lambda value: bool(selected_norm & {base._norm(v) for v in str(value).split(",") if v.strip()})
-        )]
     if potential:
         out = out[out["potencial"].isin(potential)]
     if selected_families:
         out = out[out["familia_estrategica"].isin(selected_families)]
-    if selected_provinces:
-        selected = {base._norm(x) for x in selected_provinces}
-        out = out[out["provincias"].apply(lambda x: bool(selected & {base._norm(v) for v in base._split(x)}))]
-    q = base._norm(search)
-    if q:
-        cols = [
-            "proyecto_id", "nombre_proyecto", "cluster_agrupacion", "categorias_agrupadas",
-            "ids_asociados", "sistemas_beneficiados", "cantones", "distritos",
-            "comunidades", "descripcion",
+    if selected_procedures:
+        out = out[out["procedimiento_estimado_2026"].isin(selected_procedures)]
+    query = base._norm(search)
+    if query:
+        columns = [
+            "proyecto_id", "nombre_proyecto", "familia_estrategica", "categorias_agrupadas",
+            "ids_asociados", "sistemas_beneficiados", "cantones", "distritos", "descripcion",
         ]
-        searchable = out[cols].fillna("").astype(str).agg(" ".join, axis=1)
-        out = out[searchable.apply(lambda x: q in base._norm(x))]
+        searchable = out[columns].fillna("").astype(str).agg(" ".join, axis=1)
+        out = out[searchable.apply(lambda value: query in base._norm(value))]
     return out
 
 
-def _clear_previous_result() -> None:
-    st.session_state.pop("mideplan_projects", None)
-    st.session_state.pop("mideplan_trace", None)
+def _clear_stale_model() -> None:
+    if st.session_state.get("mideplan_model_version") == MODEL_VERSION:
+        return
+    for key in ("mideplan_projects", "mideplan_trace", "mideplan_operational"):
+        st.session_state.pop(key, None)
+    st.session_state["mideplan_model_version"] = MODEL_VERSION
 
 
 def vista_reagrupamiento_mideplan() -> None:
-    st.markdown("#### Nivel de segregación del reagrupamiento")
-    st.selectbox(
-        "Criterio",
-        list(GROUPING_MODES.keys()),
-        index=list(GROUPING_MODES.keys()).index(
-            st.session_state.get("mideplan_grouping_mode", DEFAULT_MODE_LABEL)
-            if st.session_state.get("mideplan_grouping_mode", DEFAULT_MODE_LABEL) in GROUPING_MODES
-            else DEFAULT_MODE_LABEL
-        ),
-        key="mideplan_grouping_mode",
-        on_change=_clear_previous_result,
-        help=(
-            "Estricto es el recomendado: nunca mezcla clusters y, salvo duplicados evidentes, "
-            "exige compartir sistema y categoría. Los otros modos permiten explorar agrupaciones "
-            "más amplias sin cruzar clusters."
-        ),
+    _clear_stale_model()
+    st.markdown("#### Modelo compacto de cartera GAM")
+    st.info(
+        f"El modelo consolida las necesidades en hasta {MAX_PROJECTS} carteras tematicas transversales, "
+        "sin dividir automaticamente por cluster o sistema. Las categorias Mantenimiento Correctivo Preventivo, "
+        "Optimizacion, Relacion con ASADAS y terceros y Ordenamiento comercial se orientan a presupuesto operativo "
+        "cuando no contienen una obra estrategica ni alcanzan el umbral de licitacion mayor."
     )
     st.caption(
-        "Regla fija: ninguna propuesta cruza clusters de abastecimiento. En necesidades sin cluster, "
-        "solo se permite agrupar cuando comparten territorio o son claramente la misma idea."
+        "Reglas destacadas: un proyecto GAM para residuos y lodos de plantas potabilizadoras; un proyecto GAM de "
+        "almacenamiento, con prioridad para tanques de 500 m3 o mas; y carteras unificadas para estudios "
+        "hidrogeologicos, instrumentacion y regularizacion de propiedades y servidumbres."
     )
-    _ORIGINAL_VIEW()
+
+    with st.expander("Umbrales de contratacion administrativa AyA 2026", expanded=False):
+        st.dataframe(
+            pd.DataFrame([
+                {"Tipo": "Bienes y servicios", "Licitacion mayor": "Igual o mas de CRC 309,887,014", "Licitacion menor": "CRC 77,471,753 a menos de CRC 309,887,014", "Licitacion reducida": "Menos de CRC 77,471,753"},
+                {"Tipo": "Obras", "Licitacion mayor": "Igual o mas de CRC 1,112,414,922", "Licitacion menor": "CRC 278,103,730 a menos de CRC 1,112,414,922", "Licitacion reducida": "Menos de CRC 278,103,730"},
+            ]),
+            use_container_width=True,
+            hide_index=True,
+        )
+        st.caption(
+            "Los rangos de costo abiertos o insuficientes se marcan para validacion; no se presume un procedimiento "
+            "sin respaldo numerico. Toda necesidad que por su monto minimo alcance licitacion mayor se dirige a proyecto de inversion."
+        )
+
+    base._original_view()
+
+    operational = st.session_state.get("mideplan_operational")
+    if isinstance(operational, pd.DataFrame) and not operational.empty:
+        st.markdown("### Necesidades orientadas a atencion operativa")
+        st.caption(
+            "Estas necesidades permanecen trazables, pero no se cuentan como proyectos de inversion. "
+            "La ruta es orientativa y debe confirmarse cuando se disponga de una estimacion de costo definitiva."
+        )
+        st.metric("Necesidades para presupuesto operativo", f"{len(operational):,}")
+        st.dataframe(operational, use_container_width=True, hide_index=True, height=480)
+        st.download_button(
+            "Descargar necesidades de atencion operativa (CSV)",
+            data=operational.to_csv(index=False).encode("utf-8-sig"),
+            file_name="necesidades_atencion_operativa.csv",
+            mime="text/csv",
+        )
 
 
-# Parches sobre el módulo original. build_groups() mantiene toda la generación
-# MIDEPLAN existente, pero utiliza estas nuevas reglas de segregación.
-base._need_features = _need_features
-base._pair_score = _pair_score
-base._group_indices = _group_indices
+# Se conservan los componentes visuales y de trazabilidad de la Vista 3.4 base,
+# reemplazando unicamente el motor de agrupamiento, filtros y columnas.
+base._project_column_config_original = base._project_column_config
+base._original_view = base.vista_reagrupamiento_mideplan
 base.build_groups = build_groups
 base._project_column_config = _project_column_config
 base._filter_projects = _filter_projects

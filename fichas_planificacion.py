@@ -24,6 +24,7 @@ from reportlab.platypus import PageBreak, Paragraph, SimpleDocTemplate, Spacer, 
 from xlutils.copy import copy as copy_xls
 
 from database import read_optional_table
+from dta_nombres_gam import CANTONS as DTA_CANTONS, DISTRICTS as DTA_DISTRICTS
 import reagrupamiento_mideplan_v2 as regroup
 
 
@@ -32,7 +33,57 @@ DEFAULT_TEMPLATE_PATH = (
     / "data"
     / "Plant_Necesidad_Inversion_Acueducto.xls"
 )
-FICHA_MODEL_VERSION = "ficha35-2026.2"
+FICHA_MODEL_VERSION = "ficha35-2026.3"
+
+GAM_SYSTEMS = [
+    ("MEA01", "ME-A-01 Tres Ríos"),
+    ("MEA02", "ME-A-02 Guadalupe"),
+    ("MEA03", "ME-A-03 El Llano"),
+    ("MEA04", "ME-A-04 Los Sitios"),
+    ("MEA05", "ME-A-05 Salitral"),
+    ("MEA06", "ME-A-06 San Juan de Dios"),
+    ("MEA07", "ME-A-07 San Antonio de Escazú"),
+    ("MEA08", "ME-A-08 Los Cuadros"),
+    ("MEA09", "ME-A-09 Alajuelita"),
+    ("MEA10", "ME-A-10 Mata de Plátano"),
+    ("MEA11", "ME-A-11 Guatuso Patarrá"),
+    ("MEA12", "ME-A-12 Quitirrisí (Ciudad Colón)"),
+    ("MEA13", "ME-A-13 San Jerónimo de Moravia"),
+    ("MEA14", "ME-A-14 San Rafael de Coronado"),
+    ("MEA15", "ME-A-15 San Pablo"),
+    ("MEA16", "ME-A-16 Potrerillos-San Antonio (incluye antiguo ME-A-23 Barrio España)"),
+    ("MEA17", "ME-A-17 La Valencia"),
+    ("MEA18", "ME-A-18 Sur Alajuelita"),
+    ("MEA19", "ME-A-19 Puente Mulas"),
+    ("MEA20", "ME-A-20 Padre Carazo"),
+    ("MEA21", "ME-A-21 Chiverrales"),
+    ("MEA22", "ME-A-22 Pizote"),
+    ("MEA24", "ME-A-24 Matinilla"),
+    ("MEA25", "ME-A-25 Sur de Escazú"),
+    ("MEA26", "ME-A-26 Ticufres-Quebrada Honda"),
+    ("MEA27", "ME-A-27 El Guarco"),
+    ("MEA28", "ME-A-28 Vista de Mar"),
+    ("MEA29", "ME-A-29 Lajas"),
+    ("MEA30", "ME-A-30 Jericó"),
+    ("MEA31", "ME-A-31 Puriscal"),
+]
+GAM_SYSTEM_CODES = [code for code, _ in GAM_SYSTEMS]
+GAM_SYSTEMS_TEXT = "; ".join(name for _, name in GAM_SYSTEMS)
+GAM_CODES_TEXT = ", ".join(GAM_SYSTEM_CODES)
+GAM_PROVINCES_TEXT = "San José; Alajuela; Cartago; Heredia"
+GAM_MAJOR_COMMUNITIES_TEXT = (
+    "San José centro, Pavas, Hatillo, Uruca, San Sebastián, Desamparados, San Juan de Dios, "
+    "Alajuelita, Escazú, San Rafael de Escazú, Santa Ana, Pozos, Ciudad Colón, Puriscal, "
+    "Guadalupe, Ipís, Purral, Mata de Plátano, Tibás, Moravia, San Pedro, Curridabat, "
+    "Tres Ríos, Cartago, Paraíso, El Tejar, Alajuela, San Rafael de Alajuela, Belén, "
+    "Heredia, San Pablo, Santo Domingo, San Rafael de Heredia y demás comunidades urbanas "
+    "y periurbanas atendidas por los sistemas GAM."
+)
+PROVINCE_BY_CODE = {"1": "San José", "2": "Alajuela", "3": "Cartago", "4": "Heredia"}
+PURISCAL_DISTRICTS = (
+    "Santiago", "Mercedes Sur", "Barbacoas", "Grifo Alto", "San Rafael",
+    "Candelarita", "Desamparaditos", "San Antonio", "Chires",
+)
 
 POPULATION_BY_SYSTEM = {
     "MEA01": 464344.592,
@@ -262,12 +313,54 @@ def _unique(values: list[str]) -> list[str]:
 
 def _system_codes(value: object) -> list[str]:
     text = _clean(value).upper().replace("ME-A-", "MEA").replace("ME-A", "MEA")
-    codes = re.findall(r"\bMEA\d{1,2}\b", text)
-    return sorted(set(code.zfill(5) if len(code) == 4 else code for code in codes))
+    numbers = [int(item) for item in re.findall(r"\bMEA(\d{1,2})\b", text)]
+    codes = {f"MEA{number:02d}" for number in numbers if number != 32}
+    # ME-A-23 Barrio España fue integrado al sistema ME-A-16 Potrerillos-San Antonio.
+    if "MEA23" in codes:
+        codes.remove("MEA23")
+        codes.add("MEA16")
+    return sorted(codes)
 
 
 def _parse_ids(value: object) -> list[int]:
     return sorted({int(item) for item in re.findall(r"\d+", _clean(value))})
+
+
+def _gam_cantons_text() -> str:
+    entries: list[str] = []
+    for (province_code, _canton_code), canton in sorted(
+        DTA_CANTONS.items(),
+        key=lambda item: (int(item[0][0]), int(item[0][1])),
+    ):
+        province = PROVINCE_BY_CODE.get(province_code)
+        if province:
+            entries.append(f"{canton} ({province})")
+    if "Puriscal (San José)" not in entries:
+        entries.append("Puriscal (San José)")
+    return "; ".join(_unique(entries))
+
+
+def _gam_districts_text() -> str:
+    grouped: dict[tuple[str, str], list[str]] = {}
+    for (province_code, canton_code, _district_code), district in sorted(
+        DTA_DISTRICTS.items(),
+        key=lambda item: (int(item[0][0]), int(item[0][1]), int(item[0][2])),
+    ):
+        province = PROVINCE_BY_CODE.get(province_code)
+        canton = DTA_CANTONS.get((province_code, canton_code))
+        if province and canton:
+            grouped.setdefault((province, canton), []).append(district)
+
+    blocks = [
+        f"{canton} ({province}): {', '.join(_unique(districts))}"
+        for (province, canton), districts in grouped.items()
+    ]
+    blocks.append(f"Puriscal (San José): {', '.join(PURISCAL_DISTRICTS)}")
+    return "; ".join(blocks)
+
+
+GAM_CANTONS_TEXT = _gam_cantons_text()
+GAM_DISTRICTS_TEXT = _gam_districts_text()
 
 
 def _zones(codes: list[str]) -> str:
@@ -352,6 +445,89 @@ def _context(trace: pd.DataFrame, terms: tuple[str, ...], fallback: str) -> str:
     return joined[:1800] if joined else fallback
 
 
+def _current_need_context(trace: pd.DataFrame, limit: int = 6) -> str:
+    if trace.empty:
+        return ""
+    items: list[str] = []
+    for column in ("categoria_clasificacion", "idea_proyecto", "descripcion_idea", "principal_reto_por_superar"):
+        if column not in trace.columns:
+            continue
+        for value in trace[column].tolist():
+            text = _clean(value)
+            if text:
+                items.append(text.rstrip("."))
+    unique = _unique(items)
+    if not unique:
+        return ""
+    selected = unique[:limit]
+    suffix = "; entre otros antecedentes" if len(unique) > limit else ""
+    return "; ".join(selected) + suffix
+
+
+def _general_need_description(project: pd.Series, trace: pd.DataFrame) -> str:
+    name = _clean(project.get("nombre_proyecto")) or "Proyecto integral para los sistemas de la GAM"
+    family = _clean(project.get("familia_estrategica")) or "infraestructura de abastecimiento"
+    context = _current_need_context(trace)
+    current_count = len(_parse_ids(project.get("ids_asociados")))
+
+    text = (
+        f"Los 30 sistemas de abastecimiento que conforman el ámbito de gestión GAM requieren una estrategia "
+        f"programática e integral de {family.lower()} que permita atender brechas de capacidad, confiabilidad, "
+        "continuidad, eficiencia, seguridad operativa y resiliencia, de acuerdo con la condición particular de cada "
+        "sistema y con la evolución de la demanda. "
+    )
+    if current_count:
+        text += (
+            f"Como punto de partida, la Vista 3.4 agrupa {current_count} necesidades actualmente registradas"
+            + (f", entre ellas: {context}. " if context else ". ")
+        )
+    text += (
+        f"El proyecto «{name}» no se limita a esas necesidades iniciales: se formula con cobertura para toda la GAM "
+        "y con un alcance suficientemente flexible para incorporar durante su horizonte nuevas intervenciones de la "
+        "misma naturaleza que resulten de balances oferta-demanda, crecimiento poblacional y urbano, envejecimiento "
+        "de activos, cambios en la operación, reducción de pérdidas, variabilidad climática, eventos naturales, "
+        "afectaciones de terceros o nuevas prioridades institucionales. La necesidad se concibe, por tanto, como una "
+        "cartera de inversión escalable y priorizable, capaz de resolver condiciones actuales y de anticipar "
+        "requerimientos futuros sin tener que formular un proyecto independiente para cada actuación."
+    )
+    return text
+
+
+def _general_service_observations(project: pd.Series, trace: pd.DataFrame) -> tuple[str, str, str]:
+    context = _current_need_context(trace, limit=4)
+    context_sentence = f" Entre los antecedentes actuales se identifican: {context}." if context else ""
+    family = _clean(project.get("familia_estrategica")).lower() or "infraestructura de abastecimiento"
+
+    production = (
+        "Los sistemas de la GAM presentan condiciones heterogéneas entre oferta y demanda, con sectores que pueden "
+        "operar con déficit, márgenes reducidos, dependencia de fuentes o trasvases, variación estacional de caudales "
+        "y crecimiento sostenido de la demanda. La formulación debe considerar balances hídricos actualizados y "
+        "proyecciones de demanda para priorizar incorporaciones de recurso, redistribuciones, mejoras operativas y "
+        "obras que aumenten el margen de seguridad del abastecimiento."
+        + context_sentence
+        + " El alcance debe permitir incorporar nuevas brechas de producción o capacidad que se identifiquen durante "
+        "la vida del proyecto, sin restringirse a los déficits actualmente documentados."
+    )
+    infrastructure = (
+        "La infraestructura de los 30 sistemas GAM presenta edades, capacidades, materiales, niveles de redundancia "
+        "y condiciones de operación diferentes. El proyecto debe permitir rehabilitar, sustituir, ampliar, modernizar "
+        f"y estandarizar los componentes de {family} que resulten prioritarios, atendiendo fallas o limitaciones actuales "
+        "y reservando capacidad para incorporar intervenciones futuras asociadas con crecimiento de la demanda, "
+        "obsolescencia, eficiencia energética, reducción de pérdidas, continuidad y mejora del desempeño hidráulico."
+        + context_sentence
+    )
+    exposure = (
+        "La infraestructura de abastecimiento de la GAM se distribuye en zonas urbanas y periurbanas con exposición "
+        "variable a obras de terceros, tránsito y desarrollo vial, vandalismo o accesos no controlados, así como a "
+        "sismos, inundaciones, deslizamientos, erosión, socavación, caída de materiales y otros eventos naturales. "
+        "La formulación integral debe incorporar criterios de protección física, redundancia, accesibilidad, "
+        "estabilización, seguridad, adaptación y recuperación, y permitir sumar en el tiempo nuevos activos o sitios "
+        "que requieran medidas de resiliencia."
+        + context_sentence
+    )
+    return production, infrastructure, exposure
+
+
 def _solution_profile(project: pd.Series) -> tuple[str, str]:
     """Devuelve los componentes técnicos y el propósito según la cartera 3.4."""
     family = _norm(project.get("familia_estrategica"))
@@ -413,16 +589,17 @@ def _solution_profile(project: pd.Series) -> tuple[str, str]:
             ),
         ),
         (
-            ("potabilizacion", "calidad"),
+            ("potabilizacion", "calidad", "gestion de residuos"),
             (
                 "la ampliación y modernización de los procesos y unidades de tratamiento, incluyendo obras civiles, "
-                "equipamiento, dosificación, desinfección, control de calidad e instrumentación",
-                "aumentar la capacidad y confiabilidad de la potabilización y asegurar el cumplimiento sostenido de "
-                "los parámetros de calidad del agua",
+                "equipamiento, dosificación, desinfección, control de calidad, instrumentación, tratamiento de aguas "
+                "residuales del proceso, manejo de lodos y recirculación de agua técnicamente aprovechable",
+                "aumentar la capacidad y confiabilidad de la potabilización, asegurar el cumplimiento sostenido de "
+                "los parámetros de calidad y mejorar la gestión ambiental y el aprovechamiento del agua dentro de las plantas",
             ),
         ),
         (
-            ("redes y continuidad",),
+            ("redes y continuidad", "redes de distribucion", "optimizacion"),
             (
                 "la renovación, sustitución, ampliación y sectorización de redes de distribución, junto con válvulas, "
                 "regulación de presión, interconexiones y elementos de control",
@@ -490,46 +667,40 @@ def _solution_profile(project: pd.Series) -> tuple[str, str]:
 
 
 def _project_solution(project: pd.Series) -> str:
-    """Redacta una solución autosuficiente y orientada al propósito del proyecto."""
+    """Redacta una solución integral GAM, usando las necesidades actuales como contexto y no como límite."""
     name = _clean(project.get("nombre_proyecto")) or "Proyecto de inversión para los sistemas de la GAM"
     action, purpose = _solution_profile(project)
-    systems = _clean(project.get("sistemas_beneficiados"))
-    cantons = _clean(project.get("cantones"))
-    problem = _clean(project.get("problema_necesidad"))
-    scope = _clean(project.get("alcance_componentes"))
-
-    area_parts: list[str] = []
-    if systems:
-        area_parts.append(f"los sistemas {systems}")
-    if cantons:
-        area_parts.append(f"los cantones {cantons}")
-    area = " y en ".join(area_parts) if area_parts else "los sistemas de abastecimiento de la GAM"
+    trace = _project_trace(_clean(project.get("proyecto_id")))
+    context = _current_need_context(trace)
+    current_count = len(_parse_ids(project.get("ids_asociados")))
 
     paragraphs = [
-        f"Se propone desarrollar el proyecto «{name}», mediante {action} en {area}.",
-    ]
-    if scope:
-        paragraphs.append(
-            "De manera preliminar, la intervención considera los siguientes componentes y dimensiones: "
-            + scope.rstrip(".")
-            + "."
+        (
+            f"Se propone desarrollar el proyecto «{name}» como una cartera integral y programática para los 30 sistemas "
+            f"de abastecimiento de la GAM, mediante {action}. La ejecución podrá organizarse por componentes, paquetes "
+            "de obra, sistemas o etapas, de acuerdo con la prioridad técnica y presupuestaria de cada intervención."
         )
-
-    problem_text = (
-        f" La solución responde a la problemática consolidada de {problem.rstrip('.').lower()}."
-        if problem
-        else ""
+    ]
+    if current_count:
+        paragraphs.append(
+            f"Las {current_count} necesidades agrupadas actualmente en la Vista 3.4 constituyen el contexto inicial "
+            "para orientar la formulación"
+            + (f"; entre los antecedentes se encuentran: {context}." if context else ".")
+            + " Estas referencias sirven para identificar patrones y componentes recurrentes, pero no delimitan el "
+            "alcance territorial ni temporal del proyecto."
+        )
+    paragraphs.append(
+        f"El propósito del proyecto es {purpose}. Su diseño deberá permitir atender las brechas actuales y, al mismo "
+        "tiempo, incorporar nuevas necesidades de igual naturaleza que surjan por crecimiento de la demanda, cambios "
+        "en la producción, envejecimiento u obsolescencia de activos, reducción de pérdidas, optimización hidráulica, "
+        "nuevos riesgos, variabilidad climática o prioridades institucionales durante el horizonte de inversión."
     )
     paragraphs.append(
-        f"El propósito del proyecto es {purpose}.{problem_text} Su implementación permitirá atender de forma "
-        "programática las necesidades agrupadas, priorizando las intervenciones según su criticidad, beneficio "
-        "esperado y viabilidad técnica."
-    )
-    paragraphs.append(
-        "La configuración definitiva, el dimensionamiento, la localización y el presupuesto de las intervenciones "
-        "deberán precisarse durante la elaboración del perfil y las etapas posteriores de preinversión, mediante la "
-        "validación de alternativas, estudios básicos, disponibilidad de terrenos o servidumbres, permisos, riesgos "
-        "y estimaciones de costos conforme con los lineamientos institucionales y de MIDEPLAN."
+        "La selección y secuencia de las intervenciones se realizará mediante criterios de criticidad, población "
+        "beneficiada, seguridad del abastecimiento, impacto en continuidad y calidad, reducción de vulnerabilidad, "
+        "eficiencia, costo y viabilidad técnica. El dimensionamiento, localización y presupuesto de cada componente "
+        "se precisarán en las etapas de preinversión y diseño, manteniendo una única formulación integral con capacidad "
+        "de crecimiento y actualización para toda la GAM."
     )
     return "\n\n".join(paragraphs)
 
@@ -537,49 +708,30 @@ def _project_solution(project: pd.Series) -> str:
 def _defaults(project: pd.Series) -> dict[str, object]:
     project_id = _clean(project.get("proyecto_id"))
     trace = _project_trace(project_id)
-    codes = _system_codes(project.get("sistemas_beneficiados"))
-    if not codes and not trace.empty and "codigo_nombre_sistema" in trace.columns:
-        codes = _system_codes("; ".join(trace["codigo_nombre_sistema"].fillna("").astype(str)))
-    need_ids = _parse_ids(project.get("ids_asociados"))
-    latitudes, longitudes = _coordinate_values(need_ids)
+
+    # Las fichas 3.5 son proyectos integrales GAM: la lista territorial y de
+    # sistemas es fija y no se reduce a los registros actualmente asociados.
+    codes = list(GAM_SYSTEM_CODES)
     population = _population(codes)
     affected = population * 0.20
-    missing_population = [code for code in codes if code not in POPULATION_BY_SYSTEM]
-    missing_anc = [code for code in codes if code not in ANC_BY_SYSTEM]
-
-    production_context = _context(
-        trace,
-        ("déficit", "deficit", "producción", "produccion", "demanda", "caudal", "fuente", "recurso"),
-        _clean(project.get("problema_necesidad"))
-        or "La necesidad debe validarse con el balance oferta-demanda y las condiciones operativas vigentes.",
-    )
-    infrastructure_context = _context(
-        trace,
-        ("infraestructura", "equipo", "bombeo", "tanque", "tubería", "tuberia", "rehabil", "sustit", "deterior", "falla"),
-        "La condición de la infraestructura deberá confirmarse mediante inspección técnica y diagnóstico de campo.",
-    )
-    exposure_context = _context(
-        trace,
-        ("vulnerab", "riesgo", "evento natural", "desliz", "inund", "socav", "tercero", "inseguridad", "amenaza"),
-        "La exposición deberá verificarse mediante el análisis de amenazas naturales, daños de terceros y seguridad física.",
-    )
+    production_context, infrastructure_context, exposure_context = _general_service_observations(project, trace)
 
     return {
         "proyecto_id": project_id,
         "nombre_proyecto": _clean(project.get("nombre_proyecto")),
-        "necesidad_descripcion": _clean(project.get("descripcion")),
-        "provincia": _clean(project.get("provincias")),
-        "canton": _clean(project.get("cantones")),
-        "distrito": _clean(project.get("distritos")),
-        "comunidad": _clean(project.get("comunidades")),
-        "sistemas": _clean(project.get("sistemas_beneficiados")),
-        "codigos_sistema": ", ".join(codes),
+        "necesidad_descripcion": _general_need_description(project, trace),
+        "provincia": GAM_PROVINCES_TEXT,
+        "canton": GAM_CANTONS_TEXT,
+        "distrito": GAM_DISTRICTS_TEXT,
+        "comunidad": GAM_MAJOR_COMMUNITIES_TEXT,
+        "sistemas": GAM_SYSTEMS_TEXT,
+        "codigos_sistema": GAM_CODES_TEXT,
         "subgerencia": "Sistemas GAM",
         "direccion_uen": "UEN Optimización de Sistemas",
-        "region_zona": _zones(codes),
-        "cantonal": "",
-        "latitudes": latitudes,
-        "longitudes": longitudes,
+        "region_zona": "Gran Área Metropolitana y sistemas GAM - Zonas operativas 1, 2, 3, 4, 5 y 6",
+        "cantonal": "Cobertura multicanonal GAM",
+        "latitudes": "Múltiples ubicaciones; se definirán por componente durante la preinversión y el diseño",
+        "longitudes": "Múltiples ubicaciones; se definirán por componente durante la preinversión y el diseño",
         "cuenta_sistema_agua": "SI",
         "disponibilidad_recurso": "SI",
         "poblacion_atendida": round(population),
@@ -603,18 +755,19 @@ def _defaults(project: pd.Series) -> dict[str, object]:
         "mandato": "NO",
         "idea_solucion": _project_solution(project),
         "estudios_basicos": (
-            "La iniciativa se encuentra en etapa de identificación y preparación del perfil conforme al proceso de "
-            "preinversión de MIDEPLAN. Se requiere completar y validar progresivamente los estudios técnicos básicos, "
-            "la disponibilidad de terrenos o servidumbres, el diagnóstico de infraestructura, las alternativas de "
-            "solución, la estimación de costos y el cronograma de ejecución."
+            "La iniciativa se formula como un proyecto integral para la GAM y se encuentra en etapa de identificación "
+            "y preparación del perfil conforme al proceso de preinversión de MIDEPLAN. Los estudios, diseños, terrenos, "
+            "servidumbres, permisos, diagnósticos, alternativas, costos y cronogramas se completarán de forma progresiva "
+            "por componente. La formulación deberá mantener mecanismos para incorporar nuevas intervenciones compatibles "
+            "que se identifiquen durante el horizonte del proyecto, sin perder la trazabilidad de cada actuación."
         ),
-        "rango_costos": "Entre ¢500,001.00 y ¢1,000,000.00",
+        "rango_costos": "Más de ¢5,000,000.00",
         "unidad_organizacional": "UEN OPTIMIZACIÓN DE SISTEMAS GAM",
         "encargado_unidad": "GERARDO RIVAS RIVAS",
         "patrocinador": "RANDALL CAMPOS ROJAS",
         "fecha": datetime.now(ZoneInfo("America/Costa_Rica")).strftime("%d/%m/%Y"),
-        "_missing_population": ", ".join(missing_population),
-        "_missing_anc": ", ".join(missing_anc),
+        "_missing_population": "",
+        "_missing_anc": "",
     }
 
 

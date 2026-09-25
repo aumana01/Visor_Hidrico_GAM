@@ -17,7 +17,7 @@ import reagrupamiento_mideplan as base
 # transversales para toda la GAM, conserva cada ID de origen y separa las
 # atenciones que razonablemente pueden tramitarse con presupuesto operativo.
 
-MODEL_VERSION = "compacto-gam-2026.1"
+MODEL_VERSION = "compacto-gam-2026.2"
 
 THRESHOLDS_2026 = {
     "Bienes y servicios": {
@@ -47,135 +47,109 @@ class PortfolioRule:
 # necesidad termine simultaneamente en dos proyectos.
 PORTFOLIO_RULES = (
     PortfolioRule(
-        "lodos_potabilizacion",
-        "Construccion de sistemas para tratamiento de aguas residuales, manejo de lodos y recirculacion de agua en plantas potabilizadoras de la GAM",
-        "Gestion ambiental de plantas potabilizadoras",
-        "Obras",
-        "Construccion",
-        (r"lodo.*potabil", r"potabil.*lodo", r"agua residual.*potabil", r"potabil.*agua residual", r"recircul.*agua", r"lavado de filtro", r"residuo.*planta potabil"),
-        "Integra en un solo programa las soluciones ambientales de todas las plantas potabilizadoras.",
-    ),
-    PortfolioRule(
         "almacenamiento_gam",
         "Construccion y ampliacion de tanques de almacenamiento y regulacion de agua potable en la GAM",
         "Almacenamiento y regulacion",
         "Obras",
         "Construccion / Ampliacion",
         (r"tanque", r"almacenamiento", r"volumen de reserva", r"regulacion"),
-        "Prioriza soluciones de 500 m3 o mas y consolida su formulacion, diseno y construccion.",
-    ),
-    PortfolioRule(
-        "estudios_hidrogeologicos",
-        "Desarrollo de estudios hidrogeologicos para identificacion y proteccion de nuevas fuentes en sectores criticos de la GAM",
-        "Estudios para seguridad hidrica",
-        "Bienes y servicios",
-        "Estudios / Preinversion",
-        (r"estudio hidrogeolog", r"investigacion hidrogeolog", r"prospeccion", r"exploracion.*acuifer", r"modelacion.*acuifer"),
-        "Agrupa los estudios de nuevas fuentes y sectores hidricamente criticos bajo una metodologia comun.",
+        "Integra las necesidades actuales y futuras de almacenamiento y regulacion de la GAM en una cartera programatica de tanques y obras complementarias.",
     ),
     PortfolioRule(
         "fuentes_produccion",
         "Ampliacion y mejoramiento de fuentes, captaciones y campos de pozos para abastecimiento de la GAM",
-        "Fuentes y produccion",
+        "Fuentes, captaciones y produccion",
         "Obras",
         "Ampliacion / Mejoras",
-        (r"pozo", r"naciente", r"captacion", r"fuente", r"aumento de recurso", r"increment.*produccion", r"perforacion"),
-        "Consolida intervenciones fisicas destinadas a incorporar o recuperar produccion de agua potable.",
+        (
+            r"pozo", r"naciente", r"captacion", r"fuente", r"aumento de recurso",
+            r"increment.*produccion", r"perforacion", r"estudio hidrogeolog",
+            r"investigacion hidrogeolog", r"prospeccion", r"exploracion.*acuifer",
+            r"modelacion.*acuifer",
+        ),
+        "Consolida la identificacion, estudio, habilitacion, ampliacion, rehabilitacion y proteccion de fuentes, captaciones y campos de pozos para aumentar la seguridad hidrica de la GAM.",
     ),
     PortfolioRule(
         "aducciones_interconexiones",
         "Construccion y mejoramiento de aducciones, conducciones, interconexiones y trasvases estrategicos de la GAM",
-        "Infraestructura troncal e interconexion",
+        "Aducciones, conducciones e interconexiones",
         "Obras",
         "Construccion / Mejoras",
         (r"aduccion", r"conduccion", r"interconexion", r"trasvase", r"linea de impulsion", r"tuberia principal"),
-        "Integra obras troncales que permiten mover recurso entre fuentes, plantas, tanques y sistemas.",
-    ),
-    PortfolioRule(
-        "bombeo_electromecanico",
-        "Mejoramiento de estaciones de bombeo, impulsiones y sistemas electromecanicos estrategicos de la GAM",
-        "Bombeo y energia",
-        "Obras",
-        "Rehabilitacion / Mejoras",
-        (r"estacion de bombeo", r"sistema de bombeo", r"rebombeo", r"booster", r"equipo de bombeo", r"electromecan"),
-        "Agrupa renovacion, ampliacion y respaldo de infraestructura de bombeo de alcance estrategico.",
+        "Integra obras troncales actuales y futuras para transportar, interconectar y redistribuir recurso entre fuentes, plantas, tanques y sistemas de la GAM.",
     ),
     PortfolioRule(
         "potabilizacion",
         "Ampliacion y modernizacion de plantas potabilizadoras y procesos de tratamiento de agua potable de la GAM",
-        "Potabilizacion y calidad",
+        "Potabilizacion, calidad y gestion de residuos de proceso",
         "Obras",
         "Ampliacion / Modernizacion",
-        (r"planta potabil", r"potabilizacion", r"filtracion", r"floculacion", r"sedimentacion", r"desinfeccion", r"calidad de agua"),
-        "Consolida mejoras de capacidad, confiabilidad y calidad del tratamiento de agua potable.",
+        (
+            r"planta potabil", r"potabilizacion", r"filtracion", r"floculacion",
+            r"sedimentacion", r"desinfeccion", r"calidad de agua",
+            r"lodo.*potabil", r"potabil.*lodo", r"agua residual.*potabil",
+            r"potabil.*agua residual", r"recircul.*agua", r"lavado de filtro",
+            r"residuo.*planta potabil",
+        ),
+        "Consolida la ampliacion y modernizacion de plantas potabilizadoras, incluyendo procesos de tratamiento, manejo de lodos, aguas residuales de proceso, recirculacion y obras de calidad asociadas.",
     ),
     PortfolioRule(
-        "redes_distribucion",
-        "Renovacion, ampliacion y sectorizacion de redes de distribucion de agua potable en la GAM",
-        "Redes y continuidad del servicio",
+        "bombeo_electromecanico",
+        "Mejoramiento de estaciones de bombeo, impulsiones y sistemas electromecanicos estrategicos de la GAM",
+        "Bombeo, impulsiones y sistemas electromecanicos",
         "Obras",
-        "Rehabilitacion / Ampliacion",
-        (r"red de distrib", r"sustitucion.*tuber", r"renovacion.*tuber", r"ampliacion.*red", r"sectorizacion", r"valvula reguladora", r"control de presion", r"vrp"),
-        "Integra paquetes de redes con alcance multianual y priorizacion por criticidad, continuidad y perdidas.",
+        "Rehabilitacion / Mejoras",
+        (r"estacion de bombeo", r"sistema de bombeo", r"rebombeo", r"booster", r"equipo de bombeo", r"electromecan", r"impulsion"),
+        "Agrupa renovacion, ampliacion, respaldo y modernizacion de estaciones de bombeo, impulsiones y sistemas electromecanicos estrategicos.",
     ),
     PortfolioRule(
         "instrumentacion",
         "Instalacion de instrumentacion, sensores, medicion, telemetria y automatizacion para los sistemas de la GAM",
-        "Inteligencia operacional",
+        "Instrumentacion, medicion, telemetria y automatizacion",
         "Bienes y servicios",
         "Equipamiento / Implementacion",
         (r"instrumentacion", r"sensor", r"telemet", r"scada", r"caudalimet", r"macromed", r"automatizacion", r"monitoreo en linea"),
-        "Agrupa adquisicion, instalacion, integracion y puesta en marcha de instrumentacion bajo estandares comunes.",
+        "Agrupa adquisicion, instalacion, integracion y puesta en marcha de instrumentacion, medicion, sensores, telemetria y automatizacion bajo estandares comunes para la GAM.",
     ),
     PortfolioRule(
         "propiedades_servidumbres",
         "Regularizacion de propiedades y servidumbres asociadas a infraestructura operativa de la GAM",
-        "Habilitacion legal y predial",
+        "Regularizacion predial y servidumbres",
         "Bienes y servicios",
         "Regularizacion",
         (r"servidumbre", r"regulariz.*propiedad", r"regulariz.*terreno", r"derecho de paso", r"catastro.*propiedad", r"afectacion predial"),
-        "Consolida levantamientos, expedientes y gestiones prediales para infraestructura existente y futura.",
-    ),
-    PortfolioRule(
-        "aguas_residuales",
-        "Construccion, ampliacion y rehabilitacion de sistemas de tratamiento de aguas residuales en la GAM",
-        "Tratamiento de aguas residuales",
-        "Obras",
-        "Construccion / Ampliacion",
-        (r"ptar", r"tratamiento de aguas residuales", r"planta de tratamiento", r"saneamiento"),
-        "Agrupa infraestructura de tratamiento y disposicion final distinta de los residuos de potabilizacion.",
-    ),
-    PortfolioRule(
-        "alcantarillado_redes",
-        "Construccion y ampliacion de redes, colectores e interceptores de alcantarillado sanitario en la GAM",
-        "Recoleccion de aguas residuales",
-        "Obras",
-        "Construccion / Ampliacion",
-        (r"alcantarillado", r"colector", r"interceptor", r"red sanitaria", r"emisario"),
-        "Integra obras de recoleccion y transporte de aguas residuales por territorio y prioridad sanitaria.",
-    ),
-    PortfolioRule(
-        "resiliencia_estructural",
-        "Rehabilitacion y proteccion de infraestructura estrategica vulnerable de los sistemas de la GAM",
-        "Resiliencia de infraestructura",
-        "Obras",
-        "Rehabilitacion",
-        (r"estabilizacion", r"proteccion.*infraestructura", r"vulnerabilidad", r"amenaza", r"deslizamiento", r"socavacion", r"reforzamiento estructural"),
-        "Consolida intervenciones mayores de rehabilitacion, estabilizacion y proteccion ante amenazas.",
+        "Consolida levantamientos, expedientes y gestiones para regularizar propiedades, servidumbres y derechos de paso requeridos por infraestructura existente y futura.",
     ),
     PortfolioRule(
         "infraestructura_integral",
         "Programa integral de infraestructura prioritaria para sistemas de abastecimiento de la GAM",
-        "Infraestructura integral",
+        "Redes de distribucion y optimizacion de sistemas",
         "Obras",
-        "Mejoras",
-        tuple(),
-        "Recibe necesidades de inversion que no encajan con certeza en otra familia y exige validacion tecnica posterior.",
+        "Mejoras / Optimizacion",
+        (
+            r"red de distrib", r"sustitucion.*tuber", r"renovacion.*tuber",
+            r"ampliacion.*red", r"sectorizacion", r"valvula reguladora",
+            r"control de presion", r"vrp", r"optimiz", r"reduccion.*perdida",
+            r"anc", r"continuidad", r"presion", r"estabilizacion",
+            r"proteccion.*infraestructura", r"vulnerabilidad", r"amenaza",
+            r"deslizamiento", r"socavacion", r"reforzamiento estructural",
+        ),
+        "Programa integral para renovar, ampliar, sectorizar y optimizar redes de distribucion y componentes asociados, incorporando necesidades actuales y futuras de capacidad, continuidad, presion, reduccion de perdidas y resiliencia.",
     ),
 )
 
 RULE_BY_KEY = {rule.key: rule for rule in PORTFOLIO_RULES}
-MAX_PROJECTS = len(PORTFOLIO_RULES)
+PROJECT_ID_BY_RULE = {
+    "almacenamiento_gam": "PE-001",
+    "fuentes_produccion": "PE-002",
+    "aducciones_interconexiones": "PE-003",
+    "potabilizacion": "PE-005",
+    "infraestructura_integral": "PE-006",
+    "bombeo_electromecanico": "PE-007",
+    "instrumentacion": "PE-008",
+    "propiedades_servidumbres": "PE-009",
+}
+MAX_PROJECTS = len(PROJECT_ID_BY_RULE)
 
 OPERATIONAL_CATEGORIES = (
     "mantenimiento correctivo preventivo",
@@ -266,11 +240,13 @@ def _threshold_text(nature: str) -> str:
 
 
 def _rule_for_text(text: str) -> PortfolioRule:
-    # La familia residual es la ultima y solo se usa si no hubo coincidencia.
-    for rule in PORTFOLIO_RULES[:-1]:
-        if any(re.search(pattern, text) for pattern in rule.patterns):
+    # Las ocho familias son definitivas. PE-006 funciona ademas como cartera
+    # integral de redes/optimizacion y como respaldo para necesidades de
+    # abastecimiento que no encajen con suficiente certeza en otra familia.
+    for rule in PORTFOLIO_RULES:
+        if rule.patterns and any(re.search(pattern, text) for pattern in rule.patterns):
             return rule
-    return PORTFOLIO_RULES[-1]
+    return RULE_BY_KEY["infraestructura_integral"]
 
 
 def _raw_text(row: pd.Series, raw: pd.Series) -> str:
@@ -288,11 +264,19 @@ def _is_operational_category(category: object) -> bool:
 
 
 def _has_explicit_investment_signal(rule: PortfolioRule, text: str, volume_m3: float | None) -> bool:
-    if rule.key in {"lodos_potabilizacion", "estudios_hidrogeologicos", "instrumentacion", "propiedades_servidumbres"}:
+    if rule.key in {"fuentes_produccion", "potabilizacion", "instrumentacion", "propiedades_servidumbres"}:
         return True
     if rule.key == "almacenamiento_gam":
         return volume_m3 is None or volume_m3 >= 500 or any(word in text for word in ("construccion", "ampliacion", "nuevo tanque"))
-    return any(word in text for word in ("construccion", "ampliacion", "sustitucion", "renovacion", "rehabilitacion"))
+    if rule.key == "infraestructura_integral" and any(
+        word in text for word in (
+            "red de distrib", "sectorizacion", "control de presion", "vrp",
+            "optimiz", "reduccion de perdida", "anc", "continuidad",
+            "presion", "vulnerabilidad", "resiliencia",
+        )
+    ):
+        return True
+    return any(word in text for word in ("construccion", "ampliacion", "sustitucion", "renovacion", "rehabilitacion", "mejoramiento"))
 
 
 def _classify_need(row: pd.Series, raw: pd.Series) -> dict[str, object]:
@@ -372,10 +356,10 @@ def _build_project_row(
     categories = base._join(group["categoria_clasificacion"].fillna("").astype(str).tolist())
 
     return {
-        "proyecto_id": f"TMP-{rule.key}",
+        "proyecto_id": PROJECT_ID_BY_RULE[rule.key],
         "nombre_proyecto": rule.name,
         "tipologia_mideplan": rule.process,
-        "servicio": "Alcantarillado sanitario" if rule.key in {"alcantarillado_redes", "aguas_residuales"} else "Acueducto",
+        "servicio": "Acueducto",
         "familia_estrategica": rule.family,
         "criterio_agrupamiento": "Cartera tematica transversal GAM",
         "categorias_agrupadas": categories or "Sin categoria registrada",
@@ -394,13 +378,17 @@ def _build_project_row(
         "comunidades": communities,
         "problema_necesidad": base._problem_statement(group, themes),
         "descripcion": (
-            f"{rule.description} Consolida {len(ids)} necesidades del Banco de Ideas para su revision, "
-            "priorizacion y formulacion institucional, manteniendo la trazabilidad individual."
+            f"{rule.description} Toma como contexto {len(ids)} necesidades actualmente registradas en el Banco de Ideas, "
+            "sin limitar el alcance del proyecto a esas intervenciones. La formulacion se plantea con cobertura GAM y "
+            "capacidad de incorporar, priorizar y ejecutar necesidades futuras compatibles durante el horizonte del proyecto, "
+            "manteniendo la trazabilidad individual de cada actuacion."
         ),
         "alcance_componentes": base._scope(themes, dims),
         "objetivo_general": (
-            f"Desarrollar de manera programatica las intervenciones de {rule.family.lower()} requeridas en la GAM, "
-            "priorizando los sistemas con mayor criticidad y beneficio esperado."
+            f"Desarrollar e implementar de manera programatica las intervenciones de {rule.family.lower()} requeridas "
+            "en los sistemas de abastecimiento de la GAM, atendiendo las necesidades actuales identificadas y permitiendo "
+            "incorporar necesidades futuras de igual naturaleza, priorizadas segun criticidad, beneficio esperado, "
+            "seguridad del abastecimiento y viabilidad tecnica."
         ),
         "objetivos_especificos": base._specific_objectives(themes, dims),
         "poblacion_referencia": round(population) if population else None,
@@ -472,7 +460,7 @@ def build_groups() -> tuple[pd.DataFrame, pd.DataFrame]:
         group = work.iloc[positions].copy()
         rows.append(_build_project_row(rule, group, raw_by_id))
         trace = group.copy()
-        trace.insert(0, "proyecto_estrategico", f"TMP-{rule.key}")
+        trace.insert(0, "proyecto_estrategico", PROJECT_ID_BY_RULE[rule.key])
         trace.insert(1, "nombre_proyecto_estrategico", rule.name)
         trace["ruta_modelo"] = "Proyecto de inversion"
         trace["familia_cartera"] = rule.family
@@ -496,12 +484,9 @@ def build_groups() -> tuple[pd.DataFrame, pd.DataFrame]:
         na_position="last",
     ).reset_index(drop=True)
     projects["orden_estrategico"] = range(1, len(projects) + 1)
-    remap = {old: f"PE-{index:03d}" for index, old in enumerate(projects["proyecto_id"], start=1)}
-    projects["proyecto_id"] = projects["proyecto_id"].map(remap)
 
     traceability = pd.concat(trace_parts, ignore_index=True) if trace_parts else pd.DataFrame()
     if not traceability.empty:
-        traceability["proyecto_estrategico"] = traceability["proyecto_estrategico"].map(remap)
         names = dict(zip(projects["proyecto_id"], projects["nombre_proyecto"]))
         traceability["nombre_proyecto_estrategico"] = traceability["proyecto_estrategico"].map(names)
 
@@ -586,15 +571,17 @@ def vista_reagrupamiento_mideplan() -> None:
     _clear_stale_model()
     st.markdown("#### Modelo compacto de cartera GAM")
     st.info(
-        f"El modelo consolida las necesidades en hasta {MAX_PROJECTS} carteras tematicas transversales, "
-        "sin dividir automaticamente por cluster o sistema. Las categorias Mantenimiento Correctivo Preventivo, "
-        "Optimizacion, Relacion con ASADAS y terceros y Ordenamiento comercial se orientan a presupuesto operativo "
-        "cuando no contienen una obra estrategica ni alcanzan el umbral de licitacion mayor."
+        f"El modelo consolida las necesidades en {MAX_PROJECTS} proyectos tematicos definitivos para toda la GAM, "
+        "con codigos fijos PE-001, PE-002, PE-003, PE-005, PE-006, PE-007, PE-008 y PE-009. "
+        "No se divide automaticamente por cluster o sistema. Las necesidades que correspondan a redes de distribucion, "
+        "sectorizacion, control de presiones, reduccion de perdidas, resiliencia u optimizacion se integran en PE-006. "
+        "Las atenciones estrictamente operativas pueden mantenerse fuera de la cartera cuando no contienen una inversion estrategica."
     )
     st.caption(
-        "Reglas destacadas: un proyecto GAM para residuos y lodos de plantas potabilizadoras; un proyecto GAM de "
-        "almacenamiento, con prioridad para tanques de 500 m3 o mas; y carteras unificadas para estudios "
-        "hidrogeologicos, instrumentacion y regularizacion de propiedades y servidumbres."
+        "Reglas destacadas: PE-004 se integra definitivamente en PE-005, por lo que el manejo de lodos, aguas residuales "
+        "de proceso y recirculacion en plantas potabilizadoras forma parte del proyecto de modernizacion de potabilizacion. "
+        "Los estudios hidrogeologicos y acciones de identificacion de recurso se integran en PE-002. PE-006 se orienta a "
+        "redes de distribucion y optimizacion integral de los sistemas, con alcance suficiente para incorporar necesidades futuras."
     )
 
     with st.expander("Umbrales de contratacion administrativa AyA 2026", expanded=False):

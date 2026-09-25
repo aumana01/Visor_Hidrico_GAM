@@ -17,7 +17,7 @@ import reagrupamiento_mideplan as base
 # transversales para toda la GAM, conserva cada ID de origen y separa las
 # atenciones que razonablemente pueden tramitarse con presupuesto operativo.
 
-MODEL_VERSION = "compacto-gam-2026.3"
+MODEL_VERSION = "compacto-gam-2026.4"
 
 THRESHOLDS_2026 = {
     "Bienes y servicios": {
@@ -108,8 +108,18 @@ PORTFOLIO_RULES = (
         "Instrumentacion, medicion, telemetria y automatizacion",
         "Bienes y servicios",
         "Equipamiento / Implementacion",
-        (r"instrumentacion", r"sensor", r"telemet", r"scada", r"caudalimet", r"macromed", r"automatizacion", r"monitoreo en linea"),
-        "Agrupa adquisicion, instalacion, integracion y puesta en marcha de instrumentacion, medicion, sensores, telemetria y automatizacion bajo estandares comunes para la GAM.",
+        (
+            r"instrumentacion", r"instrumento", r"sensor", r"telemet", r"scada",
+            r"caudalimet", r"macromed", r"automatiz", r"monitoreo.*linea",
+            r"medicion.*caudal", r"caudal.*medicion", r"medidor.*caudal",
+            r"medicion.*presion", r"presion.*medicion", r"medidor.*presion",
+            r"medicion.*nivel", r"nivel.*medicion", r"medidor.*nivel",
+            r"registrador.*presion", r"registrador.*caudal", r"registrador.*nivel",
+            r"datalogger", r"data logger", r"transmisor", r"telegestion",
+            r"telecontrol", r"control remoto", r"\bplc\b", r"\brtu\b",
+            r"adquisicion de datos", r"inteligencia operacional",
+        ),
+        "Agrupa adquisicion, instalacion, integracion y puesta en marcha de instrumentacion, medicion de caudal, presion y nivel, sensores, registradores, telemetria, SCADA, automatizacion y sistemas de adquisicion de datos bajo estandares comunes para la GAM.",
     ),
     PortfolioRule(
         "propiedades_servidumbres",
@@ -147,6 +157,21 @@ PORTFOLIO_RULES = (
 )
 
 RULE_BY_KEY = {rule.key: rule for rule in PORTFOLIO_RULES}
+
+# Señales que deben prevalecer sobre menciones incidentales de tanque, bombeo,
+# tuberia, presion u otros componentes fisicos. De esta forma una necesidad cuyo
+# objeto principal sea medir, registrar, transmitir o automatizar se clasifica
+# en PE-007 aunque el equipo se instale sobre otra infraestructura.
+INSTRUMENTATION_PRIORITY_PATTERNS = (
+    r"instrumentacion", r"telemet", r"scada", r"macromed", r"caudalimet",
+    r"automatiz", r"monitoreo.*linea", r"registrador",
+    r"medicion.*(caudal|presion|nivel)", r"(caudal|presion|nivel).*medicion",
+    r"medidor.*(caudal|presion|nivel)", r"sensor.*(caudal|presion|nivel)",
+    r"(caudal|presion|nivel).*sensor", r"datalogger", r"data logger",
+    r"transmisor", r"telegestion", r"telecontrol", r"control remoto",
+    r"\bplc\b", r"\brtu\b", r"adquisicion de datos", r"inteligencia operacional",
+)
+
 PROJECT_ID_BY_RULE = {
     "almacenamiento_gam": "PE-001",
     "fuentes_produccion": "PE-002",
@@ -248,11 +273,20 @@ def _threshold_text(nature: str) -> str:
 
 
 def _rule_for_text(text: str) -> PortfolioRule:
+    # PE-007 tiene prioridad cuando el objeto de la necesidad es medir,
+    # registrar, transmitir, supervisar o automatizar. Esto evita que una
+    # necesidad de instrumentacion instalada en un tanque, bombeo o red sea
+    # absorbida por la familia de la infraestructura fisica.
+    if any(re.search(pattern, text) for pattern in INSTRUMENTATION_PRIORITY_PATTERNS):
+        return RULE_BY_KEY["instrumentacion"]
+
     # Las ocho familias son definitivas. PE-005 corresponde a redes de
     # distribucion y optimizacion de sistemas y funciona ademas como respaldo
     # para necesidades de abastecimiento que no encajen con suficiente certeza
     # en otra familia.
     for rule in PORTFOLIO_RULES:
+        if rule.key == "instrumentacion":
+            continue
         if rule.patterns and any(re.search(pattern, text) for pattern in rule.patterns):
             return rule
     return RULE_BY_KEY["infraestructura_integral"]
@@ -418,6 +452,58 @@ def _build_project_row(
     }
 
 
+def _build_empty_project_row(rule: PortfolioRule) -> dict[str, object]:
+    """Mantiene visibles los ocho proyectos definitivos aunque alguno tenga 0 necesidades."""
+    return {
+        "proyecto_id": PROJECT_ID_BY_RULE[rule.key],
+        "nombre_proyecto": rule.name,
+        "tipologia_mideplan": rule.process,
+        "servicio": "Acueducto",
+        "familia_estrategica": rule.family,
+        "criterio_agrupamiento": "Cartera tematica transversal GAM",
+        "categorias_agrupadas": "Sin necesidades actuales asignadas",
+        "ruta_recomendada": "Proyecto de inversion",
+        "naturaleza_contrato": rule.contract_nature,
+        "procedimiento_estimado_2026": "Por determinar - sin necesidades actuales asignadas",
+        "rango_costo_registrado": "Sin estimacion suficiente",
+        "umbral_2026": _threshold_text(rule.contract_nature),
+        "ids_asociados": "",
+        "codigos_internos": "",
+        "cantidad_necesidades": 0,
+        "sistemas_beneficiados": "",
+        "provincias": "",
+        "cantones": "",
+        "distritos": "",
+        "comunidades": "",
+        "problema_necesidad": (
+            "Proyecto programatico definido para incorporar necesidades actuales o futuras "
+            f"relacionadas con {rule.family.lower()} en los sistemas de la GAM."
+        ),
+        "descripcion": (
+            f"{rule.description} Actualmente no se identifican necesidades asignadas por el "
+            "motor de agrupamiento, pero el proyecto se mantiene visible como parte de la "
+            "cartera definitiva PE-001 a PE-008 para permitir incorporar nuevas necesidades."
+        ),
+        "alcance_componentes": "Por precisar conforme se incorporen y prioricen necesidades de esta familia.",
+        "objetivo_general": (
+            f"Desarrollar e implementar de manera programatica las intervenciones de "
+            f"{rule.family.lower()} requeridas en los sistemas de abastecimiento de la GAM."
+        ),
+        "objetivos_especificos": "Identificar, priorizar y formular las intervenciones compatibles con esta familia de proyecto.",
+        "poblacion_referencia": None,
+        "servicios_referencia": None,
+        "caudal_lps": None,
+        "volumen_m3": None,
+        "km_red": None,
+        "condicion_hidrica_critica": "",
+        "estado_bh_critico": None,
+        "potencial_puntos": 0,
+        "potencial": "Por priorizar",
+        "nivel_preinversion_sugerido": "Identificacion",
+        "informacion_faltante": "Asignar necesidades y completar informacion tecnica, territorial y de costos.",
+    }
+
+
 def build_groups() -> tuple[pd.DataFrame, pd.DataFrame]:
     work = base.seguimiento._prepare_work()
     if work.empty:
@@ -469,6 +555,7 @@ def build_groups() -> tuple[pd.DataFrame, pd.DataFrame]:
     for rule in PORTFOLIO_RULES:
         positions = project_positions[rule.key]
         if not positions:
+            rows.append(_build_empty_project_row(rule))
             continue
         group = work.iloc[positions].copy()
         rows.append(_build_project_row(rule, group, raw_by_id))
@@ -584,8 +671,9 @@ def vista_reagrupamiento_mideplan() -> None:
     _clear_stale_model()
     st.markdown("#### Modelo compacto de cartera GAM")
     st.info(
-        f"El modelo consolida las necesidades en {MAX_PROJECTS} proyectos tematicos definitivos para toda la GAM, "
-        "con codigos fijos y consecutivos PE-001 a PE-008. "
+        f"El modelo organiza la cartera en {MAX_PROJECTS} proyectos tematicos definitivos para toda la GAM, "
+        "con codigos fijos y consecutivos PE-001 a PE-008. Los ocho proyectos permanecen visibles aun cuando "
+        "temporalmente alguno no tenga necesidades asignadas. "
         "No se divide automaticamente por cluster o sistema. Las necesidades que correspondan a ampliacion, renovacion, "
         "sustitucion, mallado, sectorizacion, control de presiones, reduccion de perdidas, continuidad, resiliencia "
         "u optimizacion hidraulica de redes de distribucion se integran en PE-005. "

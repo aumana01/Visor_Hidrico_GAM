@@ -33,7 +33,7 @@ DEFAULT_TEMPLATE_PATH = (
     / "data"
     / "Plant_Necesidad_Inversion_Acueducto.xls"
 )
-FICHA_MODEL_VERSION = "ficha35-2026.3"
+FICHA_MODEL_VERSION = "ficha35-2026.4"
 
 GAM_SYSTEMS = [
     ("MEA01", "ME-A-01 Tres Ríos"),
@@ -601,10 +601,11 @@ def _solution_profile(project: pd.Series) -> tuple[str, str]:
         (
             ("redes y continuidad", "redes de distribucion", "optimizacion"),
             (
-                "la renovación, sustitución, ampliación y sectorización de redes de distribución, junto con válvulas, "
-                "regulación de presión, interconexiones y elementos de control",
-                "mejorar la continuidad, presión y capacidad hidráulica, reducir la vulnerabilidad de las redes y "
-                "disminuir las pérdidas reales de agua",
+                "la ampliación, renovación, sustitución, mallado, sectorización y optimización hidráulica de redes de "
+                "distribución, incluyendo tuberías primarias, secundarias y terciarias, válvulas, regulación y control "
+                "de presión, interconexiones, distritos de medición y demás elementos requeridos para su operación",
+                "incrementar la capacidad hidráulica y la flexibilidad de las redes, mejorar continuidad y presión, "
+                "reducir fugas y Agua No Contabilizada, aumentar la redundancia y disminuir la vulnerabilidad operativa",
             ),
         ),
         (

@@ -7,6 +7,7 @@ import shutil
 import subprocess
 import tempfile
 import unicodedata
+import zipfile
 from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -33,7 +34,18 @@ DEFAULT_TEMPLATE_PATH = (
     / "data"
     / "Plant_Necesidad_Inversion_Acueducto.xls"
 )
-FICHA_MODEL_VERSION = "ficha35-2026.4"
+PROJECT_TEMPLATE_DIR = Path(__file__).resolve().parent / "data" / "fichas_planificacion"
+PROJECT_TEMPLATE_FILES = {
+    "PE-001": "PE-001.xls",
+    "PE-002": "PE-002.xls",
+    "PE-003": "PE-003.xls",
+    "PE-004": "PE-004.xls",
+    "PE-005": "PE-005.xls",
+    "PE-006": "PE-006.xls",
+    "PE-007": "PE-007.xls",
+    "PE-008": "PE-008.xls",
+}
+FICHA_MODEL_VERSION = "ficha35-2026.5"
 
 GAM_SYSTEMS = [
     ("MEA01", "ME-A-01 Tres Ríos"),
@@ -237,6 +249,10 @@ FIELD_LABELS = {
 }
 
 TEMPLATE_MARKERS = {
+    "nombre_proyecto": (
+        "se propone desarrollar el proyecto",
+        "nombre del proyecto",
+    ),
     "necesidad_descripcion": (
         "descripcion de la necesidad u oportunidad",
         "descripción de la necesidad u oportunidad",
@@ -250,7 +266,7 @@ TEMPLATE_MARKERS = {
     "distrito": ("distrito",),
     "comunidad": ("comunidad",),
     "codigos_sistema": ("codigo del sistema", "código del sistema", "codigo sis"),
-    "sistemas": ("sistema de abastecimiento",),
+    "sistemas": ("sistema de abastecimiento", "sistemas de acueducto", "sistema de acueducto"),
     "latitudes": ("latitud",),
     "longitudes": ("longitud",),
     "cuenta_sistema_agua": ("cuenta la poblacion con sistema", "cuenta la población con sistema"),
@@ -886,25 +902,42 @@ def _merged_end_col(sheet: xlrd.sheet.Sheet, row: int, col: int) -> int:
     return col + 1
 
 
+def _looks_like_template_label(value: object) -> bool:
+    text = _norm(value)
+    if not text:
+        return False
+    for markers in TEMPLATE_MARKERS.values():
+        for marker in markers:
+            normalized = _norm(marker)
+            if normalized and normalized in text:
+                return True
+    return text == "observacion" or text.startswith("observacion ")
+
+
 def _target_cell(sheet: xlrd.sheet.Sheet, label_row: int, label_col: int) -> tuple[int, int]:
+    """Localiza la celda de respuesta, aunque ya contenga información desactualizada."""
     start_col = _merged_end_col(sheet, label_row, label_col)
     max_col = max(sheet.ncols + 4, start_col + 1)
 
+    # En la ficha institucional la respuesta se ubica normalmente a la derecha
+    # de la etiqueta. Se acepta una celda ya poblada para reemplazar el valor
+    # anterior, evitando conservar textos viejos en las plantillas PE.
     for col in range(start_col, max_col):
         top_row, top_col = _merged_top_left(sheet, label_row, col)
         if (top_row, top_col) != (label_row, col):
             continue
         value = sheet.cell_value(label_row, col) if col < sheet.ncols else ""
-        if not _clean(value):
+        if not _looks_like_template_label(value):
             return label_row, col
 
+    # Algunas preguntas usan la fila siguiente como área de respuesta.
     for row in range(label_row + 1, min(sheet.nrows, label_row + 4)):
         for col in range(label_col, max_col):
             top_row, top_col = _merged_top_left(sheet, row, col)
             if (top_row, top_col) != (row, col):
                 continue
             value = sheet.cell_value(row, col) if col < sheet.ncols else ""
-            if not _clean(value):
+            if not _looks_like_template_label(value):
                 return row, col
     return label_row, start_col
 
@@ -1161,6 +1194,110 @@ def _libreoffice_pdf(xls_bytes: bytes) -> bytes | None:
 def _safe_filename(value: object) -> str:
     text = _norm(value).replace(" ", "_")
     return re.sub(r"[^a-z0-9_]+", "", text)[:80] or "proyecto"
+
+
+def _project_template_path(project_id: object) -> Path | None:
+    code = _clean(project_id).upper()
+    filename = PROJECT_TEMPLATE_FILES.get(code)
+    return PROJECT_TEMPLATE_DIR / filename if filename else None
+
+
+def _bundled_project_template(project_id: object) -> bytes | None:
+    path = _project_template_path(project_id)
+    if path is not None and path.exists():
+        return path.read_bytes()
+    if DEFAULT_TEMPLATE_PATH.exists():
+        return DEFAULT_TEMPLATE_PATH.read_bytes()
+    return None
+
+
+def _uploaded_project_templates(uploaded_files: object) -> dict[str, bytes]:
+    templates: dict[str, bytes] = {}
+    for uploaded in uploaded_files or []:
+        name = _clean(getattr(uploaded, "name", "")).upper()
+        match = re.search(r"PE[-_ ]?0*(\d{1,3})", name)
+        if not match:
+            continue
+        code = f"PE-{int(match.group(1)):03d}"
+        if code not in PROJECT_TEMPLATE_FILES:
+            continue
+        try:
+            templates[code] = uploaded.getvalue()
+        except Exception:
+            continue
+    return templates
+
+
+def _template_source_label(project_id: object, uploaded_templates: dict[str, bytes]) -> str:
+    code = _clean(project_id).upper()
+    if code in uploaded_templates:
+        return "Plantilla específica cargada en esta sesión"
+    path = _project_template_path(code)
+    if path is not None and path.exists():
+        return "Plantilla específica PE incorporada en el repositorio"
+    if DEFAULT_TEMPLATE_PATH.exists():
+        return "Plantilla institucional general del repositorio"
+    return "Formato de respaldo generado por el aplicativo"
+
+
+def _xls_for_project(
+    project: pd.Series,
+    fields: dict[str, object],
+    uploaded_templates: dict[str, bytes],
+) -> tuple[bytes, int, str]:
+    project_id = _clean(project.get("proyecto_id")).upper()
+    template_bytes = uploaded_templates.get(project_id) or _bundled_project_template(project_id)
+    source = _template_source_label(project_id, uploaded_templates)
+    if template_bytes:
+        try:
+            xls_bytes, mapped = _template_xls(template_bytes, fields)
+            return xls_bytes, mapped, source
+        except Exception:
+            pass
+    return _fallback_xls(fields), 0, "Formato de respaldo generado por el aplicativo"
+
+
+def _data_for_project(project: pd.Series) -> dict[str, object]:
+    signature = _signature(project)
+    data_key = f"ficha35_data_{signature}"
+    existing = st.session_state.get(data_key)
+    if isinstance(existing, dict):
+        return dict(existing)
+    return _defaults(project)
+
+
+def _batch_xls_zip(
+    projects: pd.DataFrame,
+    uploaded_templates: dict[str, bytes],
+    current_project_id: str,
+    current_fields: dict[str, object],
+) -> tuple[bytes, list[dict[str, object]]]:
+    output = io.BytesIO()
+    results: list[dict[str, object]] = []
+    ordered = projects.copy()
+    ordered["_pe_sort"] = ordered["proyecto_id"].astype(str)
+    ordered = ordered.sort_values("_pe_sort")
+
+    with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        for _, project in ordered.iterrows():
+            project_id = _clean(project.get("proyecto_id")).upper()
+            fields = (
+                dict(current_fields)
+                if project_id == current_project_id
+                else _fields_for_export(_data_for_project(project))
+            )
+            xls_bytes, mapped, source = _xls_for_project(project, fields, uploaded_templates)
+            safe_name = _safe_filename(project.get("nombre_proyecto"))
+            archive.writestr(f"{project_id}_{safe_name}.xls", xls_bytes)
+            results.append(
+                {
+                    "Proyecto": project_id,
+                    "Plantilla": source,
+                    "Campos actualizados": mapped,
+                    "Archivo": f"{project_id}_{safe_name}.xls",
+                }
+            )
+    return output.getvalue(), results
 
 
 def _ensure_projects() -> tuple[pd.DataFrame, pd.DataFrame]:
@@ -1568,39 +1705,37 @@ def vista_fichas_planificacion() -> None:
         st.success("Ajustes guardados durante la sesión. Ya puede exportar la ficha.")
 
     st.markdown("### Exportación")
-    bundled_template = DEFAULT_TEMPLATE_PATH.read_bytes() if DEFAULT_TEMPLATE_PATH.exists() else None
-    uploaded_template = st.file_uploader(
-        "Plantilla institucional .xls",
+    st.caption(
+        "Cada proyecto PE utiliza su propia plantilla. Puede cargar aquí una o varias versiones actualizadas; "
+        "el código PE del nombre del archivo (PE-001…PE-008) determina automáticamente a cuál proyecto corresponde. "
+        "Una plantilla cargada en esta sesión tiene prioridad sobre la versión almacenada en el repositorio."
+    )
+    uploaded_template_files = st.file_uploader(
+        "Plantillas específicas PE-001 a PE-008 (.xls)",
         type=["xls"],
-        key=f"{prefix}_template",
+        accept_multiple_files=True,
+        key="ficha35_project_templates",
         help=(
-            "La plantilla conserva sus hojas, combinaciones de celdas, tamaños, colores y tipografías. "
-            "Si el archivo institucional se incorpora posteriormente al repositorio, se cargará automáticamente."
+            "Puede seleccionar las ocho fichas simultáneamente. No es necesario que estén vacías: "
+            "el exportador reemplaza los campos administrados por la Vista 3.5, incluso si contienen valores anteriores."
         ),
-        disabled=bundled_template is not None,
     )
-    template_bytes = bundled_template or (
-        uploaded_template.getvalue() if uploaded_template is not None else None
-    )
+    uploaded_templates = _uploaded_project_templates(uploaded_template_files)
 
     export_fields = _fields_for_export(current)
-    try:
-        if template_bytes:
-            xls_bytes, mapped_fields = _template_xls(template_bytes, export_fields)
-            st.caption(
-                f"Plantilla institucional aplicada: {mapped_fields} campos localizados y completados automáticamente."
-            )
-        else:
-            xls_bytes = _fallback_xls(export_fields)
-            st.warning(
-                "No hay una plantilla institucional incorporada en el repositorio. Se generará una ficha estructurada "
-                "de respaldo. Para conservar exactamente el formato oficial, cargue el archivo .xls original."
-            )
-    except Exception as exc:
-        xls_bytes = _fallback_xls(export_fields)
+    xls_bytes, mapped_fields, template_source = _xls_for_project(
+        project,
+        export_fields,
+        uploaded_templates,
+    )
+    st.caption(
+        f"{_clean(project.get('proyecto_id'))}: {template_source}. "
+        f"{mapped_fields} campos de la plantilla fueron localizados y actualizados automáticamente."
+    )
+    if mapped_fields == 0 and "respaldo" in template_source.lower():
         st.warning(
-            "No fue posible completar automáticamente la plantilla aportada; se generó la ficha de respaldo. "
-            f"Detalle: {exc}"
+            "Para conservar exactamente el formato de esta ficha, cargue su archivo PE correspondiente o incorpórelo "
+            "en data/fichas_planificacion dentro del repositorio."
         )
 
     pdf_bytes = _libreoffice_pdf(xls_bytes)
@@ -1613,14 +1748,14 @@ def vista_fichas_planificacion() -> None:
     download_columns[0].download_button(
         "Descargar ficha XLS",
         data=xls_bytes,
-        file_name=f"Ficha_{safe_name}.xls",
+        file_name=f"{_clean(project.get('proyecto_id'))}_{safe_name}.xls",
         mime="application/vnd.ms-excel",
         use_container_width=True,
     )
     download_columns[1].download_button(
         "Descargar ficha PDF",
         data=pdf_bytes,
-        file_name=f"Ficha_{safe_name}.pdf",
+        file_name=f"{_clean(project.get('proyecto_id'))}_{safe_name}.pdf",
         mime="application/pdf",
         use_container_width=True,
     )
@@ -1630,3 +1765,30 @@ def vista_fichas_planificacion() -> None:
         st.caption(
             "El servidor no dispone de LibreOffice; el PDF se generó con el mismo contenido en formato institucional de respaldo."
         )
+
+    st.markdown("#### Exportación conjunta")
+    st.caption(
+        "Genera en una sola descarga las fichas PE-001 a PE-008. Para cada proyecto se utilizan primero los ajustes "
+        "guardados durante la sesión; si una ficha aún no fue abierta, se calculan sus valores vigentes desde la Vista 3.4."
+    )
+    batch_zip, batch_results = _batch_xls_zip(
+        projects,
+        uploaded_templates,
+        _clean(project.get("proyecto_id")).upper(),
+        export_fields,
+    )
+    batch_df = pd.DataFrame(batch_results)
+    st.dataframe(
+        batch_df,
+        use_container_width=True,
+        hide_index=True,
+        height=min(360, 38 * (len(batch_df) + 1)),
+    )
+    st.download_button(
+        "Descargar todas las fichas XLS (ZIP)",
+        data=batch_zip,
+        file_name="Fichas_Planificacion_GAM_PE-001_a_PE-008.zip",
+        mime="application/zip",
+        type="primary",
+        use_container_width=True,
+    )

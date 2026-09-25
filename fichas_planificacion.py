@@ -1211,20 +1211,43 @@ def _bundled_project_template(project_id: object) -> bytes | None:
     return None
 
 
+def _project_code_from_filename(value: object) -> str | None:
+    name = _clean(value).upper()
+    match = re.search(r"PE[-_ ]?0*(\d{1,3})", name)
+    if not match:
+        return None
+    code = f"PE-{int(match.group(1)):03d}"
+    return code if code in PROJECT_TEMPLATE_FILES else None
+
+
 def _uploaded_project_templates(uploaded_files: object) -> dict[str, bytes]:
+    """Acepta fichas .xls individuales o uno/más ZIP con fichas PE."""
     templates: dict[str, bytes] = {}
     for uploaded in uploaded_files or []:
-        name = _clean(getattr(uploaded, "name", "")).upper()
-        match = re.search(r"PE[-_ ]?0*(\d{1,3})", name)
-        if not match:
-            continue
-        code = f"PE-{int(match.group(1)):03d}"
-        if code not in PROJECT_TEMPLATE_FILES:
-            continue
+        name = _clean(getattr(uploaded, "name", ""))
         try:
-            templates[code] = uploaded.getvalue()
+            payload = uploaded.getvalue()
         except Exception:
             continue
+
+        if name.lower().endswith(".zip"):
+            try:
+                with zipfile.ZipFile(io.BytesIO(payload), "r") as archive:
+                    for member in archive.infolist():
+                        if member.is_dir() or not member.filename.lower().endswith(".xls"):
+                            continue
+                        code = _project_code_from_filename(Path(member.filename).name)
+                        if code:
+                            templates[code] = archive.read(member)
+            except (zipfile.BadZipFile, OSError):
+                continue
+            continue
+
+        if name.lower().endswith(".xls"):
+            code = _project_code_from_filename(name)
+            if code:
+                templates[code] = payload
+
     return templates
 
 
@@ -1711,16 +1734,30 @@ def vista_fichas_planificacion() -> None:
         "Una plantilla cargada en esta sesión tiene prioridad sobre la versión almacenada en el repositorio."
     )
     uploaded_template_files = st.file_uploader(
-        "Plantillas específicas PE-001 a PE-008 (.xls)",
-        type=["xls"],
+        "Plantillas específicas PE-001 a PE-008 (.xls o ZIP)",
+        type=["xls", "zip"],
         accept_multiple_files=True,
         key="ficha35_project_templates",
         help=(
-            "Puede seleccionar las ocho fichas simultáneamente. No es necesario que estén vacías: "
-            "el exportador reemplaza los campos administrados por la Vista 3.5, incluso si contienen valores anteriores."
+            "Puede seleccionar las ocho fichas .xls simultáneamente o cargar un único ZIP que las contenga. "
+            "El nombre debe incluir PE-001…PE-008. No es necesario que las fichas estén vacías: el exportador "
+            "reemplaza los campos administrados por la Vista 3.5, incluso si contienen valores anteriores."
         ),
     )
     uploaded_templates = _uploaded_project_templates(uploaded_template_files)
+    if uploaded_template_files:
+        detected_codes = sorted(uploaded_templates)
+        if detected_codes:
+            st.success(
+                "Plantillas reconocidas: "
+                + ", ".join(detected_codes)
+                + f" ({len(detected_codes)} de {len(PROJECT_TEMPLATE_FILES)})."
+            )
+        else:
+            st.error(
+                "No se reconoció ninguna ficha PE dentro de los archivos cargados. "
+                "Verifique que sean .xls o un ZIP válido y que los nombres incluyan PE-001…PE-008."
+            )
 
     export_fields = _fields_for_export(current)
     xls_bytes, mapped_fields, template_source = _xls_for_project(

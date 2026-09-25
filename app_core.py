@@ -46,16 +46,15 @@ CLUSTER_SYSTEMS = {
     ],
     "CLUSTER C-2": ["ME-A-15 San Pablo", "ME-A-17 La Valencia"],
     "CLUSTER C-3": [
-        "ME-A-03 El Llano", "ME-A-06 San Juan de Dios", "ME-A-07 San Antonio de Escazu",
-        "ME-A-09 Alajuelita", "ME-A-16 Potrerillos-San Antonio", "ME-A-23 Barrio Espana",
-        "ME-A-25 Sur de Escazu", "ME-A-19 Puente Mulas",
+        "ME-A-03 El Llano", "ME-A-05 Salitral", "ME-A-06 San Juan de Dios",
+        "ME-A-07 San Antonio de Escazu", "ME-A-09 Alajuelita",
+        "ME-A-16 Potrerillos-San Antonio", "ME-A-18 Sur Alajuelita",
+        "ME-A-19 Puente Mulas", "ME-A-23 Barrio Espana", "ME-A-24 Matinilla",
+        "ME-A-25 Sur de Escazu", "ME-A-29 Lajas",
     ],
     "CLUSTER C-4": ["ME-A-14 San Rafael de Coronado", "ME-A-21 Chiverrales"],
     "CLUSTER C-5": ["ME-A-12 Quitirrisi (Ciudad Colon)", "ME-A-26 Ticufres-Quebrada Honda", "ME-A-31 Puriscal"],
-    "CLUSTER C-6": [
-        "ME-A-05 Salitral", "ME-A-11 Guatuso Patarra", "ME-A-18 Sur Alajuelita",
-        "ME-A-24 Matinilla", "ME-A-27 El Guarco", "ME-A-29 Lajas", "ME-A-30 Jerico",
-    ],
+    "CLUSTER C-6": ["ME-A-11 Guatuso Patarra", "ME-A-27 El Guarco", "ME-A-30 Jerico"],
 }
 CLUSTER_REPRESENTATIVO = {
     "CLUSTER C-1": "Tres Ríos, Guadalupe y Los Sitios",

@@ -17,7 +17,7 @@ import reagrupamiento_mideplan as base
 # transversales para toda la GAM, conserva cada ID de origen y separa las
 # atenciones que razonablemente pueden tramitarse con presupuesto operativo.
 
-MODEL_VERSION = "compacto-gam-2026.2"
+MODEL_VERSION = "compacto-gam-2026.3"
 
 THRESHOLDS_2026 = {
     "Bienes y servicios": {
@@ -122,19 +122,27 @@ PORTFOLIO_RULES = (
     ),
     PortfolioRule(
         "infraestructura_integral",
-        "Programa integral de infraestructura prioritaria para sistemas de abastecimiento de la GAM",
+        "Ampliacion, mejoramiento y optimizacion de redes de distribucion de agua potable de la GAM",
         "Redes de distribucion y optimizacion de sistemas",
         "Obras",
-        "Mejoras / Optimizacion",
+        "Ampliacion / Mejoramiento / Optimizacion",
         (
-            r"red de distrib", r"sustitucion.*tuber", r"renovacion.*tuber",
-            r"ampliacion.*red", r"sectorizacion", r"valvula reguladora",
-            r"control de presion", r"vrp", r"optimiz", r"reduccion.*perdida",
-            r"anc", r"continuidad", r"presion", r"estabilizacion",
-            r"proteccion.*infraestructura", r"vulnerabilidad", r"amenaza",
-            r"deslizamiento", r"socavacion", r"reforzamiento estructural",
+            r"red de distrib", r"red primaria", r"red secundaria", r"red terciaria",
+            r"tuberia.*distrib", r"sustitucion.*tuber", r"reemplazo.*tuber",
+            r"renovacion.*tuber", r"ampliacion.*red", r"extension.*red",
+            r"mallado", r"malla.*red", r"sectorizacion", r"dma",
+            r"distrito.*medicion", r"valvula", r"valvula reguladora",
+            r"regulacion.*presion", r"control de presion", r"vrp",
+            r"optimiz", r"mejora.*hidraul", r"mejoramiento.*hidraul",
+            r"capacidad.*hidraul", r"balance.*hidraul", r"modelacion.*hidraul",
+            r"reduccion.*perdida", r"perdidas.*agua", r"agua no contabilizada",
+            r"anc", r"fuga", r"continuidad", r"baja presion", r"alta presion",
+            r"presion", r"redundancia.*red", r"resiliencia.*red",
+            r"estabilizacion", r"proteccion.*infraestructura",
+            r"vulnerabilidad", r"amenaza", r"deslizamiento",
+            r"socavacion", r"reforzamiento estructural",
         ),
-        "Programa integral para renovar, ampliar, sectorizar y optimizar redes de distribucion y componentes asociados, incorporando necesidades actuales y futuras de capacidad, continuidad, presion, reduccion de perdidas y resiliencia.",
+        "Integra las necesidades de ampliacion, renovacion, sustitucion, mallado, sectorizacion y optimizacion hidraulica de las redes de distribucion de la GAM, incluyendo control de presiones, valvulas, reduccion de perdidas, continuidad, redundancia y resiliencia, con capacidad para incorporar necesidades futuras de la misma naturaleza.",
     ),
 )
 
@@ -143,11 +151,11 @@ PROJECT_ID_BY_RULE = {
     "almacenamiento_gam": "PE-001",
     "fuentes_produccion": "PE-002",
     "aducciones_interconexiones": "PE-003",
-    "potabilizacion": "PE-005",
-    "infraestructura_integral": "PE-006",
-    "bombeo_electromecanico": "PE-007",
-    "instrumentacion": "PE-008",
-    "propiedades_servidumbres": "PE-009",
+    "potabilizacion": "PE-004",
+    "infraestructura_integral": "PE-005",
+    "bombeo_electromecanico": "PE-006",
+    "instrumentacion": "PE-007",
+    "propiedades_servidumbres": "PE-008",
 }
 MAX_PROJECTS = len(PROJECT_ID_BY_RULE)
 
@@ -240,9 +248,10 @@ def _threshold_text(nature: str) -> str:
 
 
 def _rule_for_text(text: str) -> PortfolioRule:
-    # Las ocho familias son definitivas. PE-006 funciona ademas como cartera
-    # integral de redes/optimizacion y como respaldo para necesidades de
-    # abastecimiento que no encajen con suficiente certeza en otra familia.
+    # Las ocho familias son definitivas. PE-005 corresponde a redes de
+    # distribucion y optimizacion de sistemas y funciona ademas como respaldo
+    # para necesidades de abastecimiento que no encajen con suficiente certeza
+    # en otra familia.
     for rule in PORTFOLIO_RULES:
         if rule.patterns and any(re.search(pattern, text) for pattern in rule.patterns):
             return rule
@@ -270,8 +279,12 @@ def _has_explicit_investment_signal(rule: PortfolioRule, text: str, volume_m3: f
         return volume_m3 is None or volume_m3 >= 500 or any(word in text for word in ("construccion", "ampliacion", "nuevo tanque"))
     if rule.key == "infraestructura_integral" and any(
         word in text for word in (
-            "red de distrib", "sectorizacion", "control de presion", "vrp",
-            "optimiz", "reduccion de perdida", "anc", "continuidad",
+            "red de distrib", "red primaria", "red secundaria", "red terciaria",
+            "sectorizacion", "dma", "mallado", "tuberia", "valvula",
+            "control de presion", "regulacion de presion", "vrp",
+            "optimiz", "mejora hidraul", "capacidad hidraul",
+            "reduccion de perdida", "perdidas de agua", "fuga",
+            "agua no contabilizada", "anc", "continuidad",
             "presion", "vulnerabilidad", "resiliencia",
         )
     ):
@@ -572,16 +585,18 @@ def vista_reagrupamiento_mideplan() -> None:
     st.markdown("#### Modelo compacto de cartera GAM")
     st.info(
         f"El modelo consolida las necesidades en {MAX_PROJECTS} proyectos tematicos definitivos para toda la GAM, "
-        "con codigos fijos PE-001, PE-002, PE-003, PE-005, PE-006, PE-007, PE-008 y PE-009. "
-        "No se divide automaticamente por cluster o sistema. Las necesidades que correspondan a redes de distribucion, "
-        "sectorizacion, control de presiones, reduccion de perdidas, resiliencia u optimizacion se integran en PE-006. "
+        "con codigos fijos y consecutivos PE-001 a PE-008. "
+        "No se divide automaticamente por cluster o sistema. Las necesidades que correspondan a ampliacion, renovacion, "
+        "sustitucion, mallado, sectorizacion, control de presiones, reduccion de perdidas, continuidad, resiliencia "
+        "u optimizacion hidraulica de redes de distribucion se integran en PE-005. "
         "Las atenciones estrictamente operativas pueden mantenerse fuera de la cartera cuando no contienen una inversion estrategica."
     )
     st.caption(
-        "Reglas destacadas: PE-004 se integra definitivamente en PE-005, por lo que el manejo de lodos, aguas residuales "
-        "de proceso y recirculacion en plantas potabilizadoras forma parte del proyecto de modernizacion de potabilizacion. "
-        "Los estudios hidrogeologicos y acciones de identificacion de recurso se integran en PE-002. PE-006 se orienta a "
-        "redes de distribucion y optimizacion integral de los sistemas, con alcance suficiente para incorporar necesidades futuras."
+        "Reglas destacadas: el manejo de lodos, aguas residuales de proceso y recirculacion permanece integrado en PE-004 "
+        "Ampliacion y modernizacion de plantas potabilizadoras; no constituye un proyecto separado. Los estudios "
+        "hidrogeologicos y acciones de identificacion de recurso se integran en PE-002. PE-005 corresponde especificamente "
+        "a redes de distribucion y optimizacion de sistemas, con alcance suficiente para incorporar necesidades actuales "
+        "y futuras de esa misma naturaleza."
     )
 
     with st.expander("Umbrales de contratacion administrativa AyA 2026", expanded=False):

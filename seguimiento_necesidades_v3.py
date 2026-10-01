@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import re
-from typing import Iterable
 
 import pandas as pd
 import streamlit as st
@@ -36,66 +35,6 @@ SEARCH_COLUMNS = [
 ]
 
 
-_COMMUNITY_PREFIX_RE = re.compile(
-    r"\b(?:Calle|Barrio|Urbanizaci[oó]n|Urb\.?|Residencial|Comunidad)\s+"
-    r"([A-ZÁÉÍÓÚÑ][A-Za-zÁÉÍÓÚÑáéíóúñ0-9'’.-]*"
-    r"(?:\s+(?:de|del|la|las|los|el|y|[A-ZÁÉÍÓÚÑ][A-Za-zÁÉÍÓÚÑáéíóúñ0-9'’.-]*)){0,5})",
-    flags=re.I,
-)
-_DIRECTION_PLACE_RE = re.compile(
-    r"\b(?:hacia|desde|en|para)\s+(?:el\s+|la\s+|los\s+|las\s+)?"
-    r"((?:[A-ZÁÉÍÓÚÑ][A-Za-zÁÉÍÓÚÑáéíóúñ'’.-]*|de|del|la|las|los|el)"
-    r"(?:\s+(?:[A-ZÁÉÍÓÚÑ][A-Za-zÁÉÍÓÚÑáéíóúñ'’.-]*|de|del|la|las|los|el|y)){0,4})"
-)
-_GENERIC_COMMUNITY_RE = re.compile(
-    r"^(?:zona\s*\d+|zona|sector|sector alto|sector bajo|parte alta|parte baja|"
-    r"todos los sistemas aya|acueducto metropolitano)$",
-    flags=re.I,
-)
-_INFRA_PREFIX_RE = re.compile(
-    r"^(?:TA|TQ|PP|PTAR|Planta(?:\s+Potabilizadora)?|Tanque|Pozo|Fuente|"
-    r"Captaci[oó]n|Estaci[oó]n(?:\s+de\s+Bombeo)?|Desarenador)\s+",
-    flags=re.I,
-)
-_PROSE_TERMS = {
-    "fase", "responsable", "puntaje", "horizonte", "ruta propuesta", "impacto principal",
-    "ejecución", "ejecucion", "proyecto", "iniciativa", "necesidad", "diseño", "diseno",
-    "construcción", "construccion", "contratación", "contratacion", "licitación", "licitacion",
-    "validar", "definir", "confirmar", "mejorar", "incrementar", "implementar", "incorporar",
-}
-
-
-def _clean_candidate(value: object) -> str:
-    text = base._clean_text(value)
-    if not text:
-        return ""
-    text = re.sub(r"\s+", " ", text).strip(" ,;:.-")
-    text = re.sub(r"^(?:sector(?:es)?\s+(?:de\s+|del\s+)?)", "", text, flags=re.I).strip()
-    text = _INFRA_PREFIX_RE.sub("", text).strip()
-    text = re.sub(r"\s+(?:para|mediante|debido|porque|con el fin|con la finalidad)\b.*$", "", text, flags=re.I).strip()
-    text = re.sub(r"\s+y$", "", text, flags=re.I).strip()
-    if not text or _GENERIC_COMMUNITY_RE.match(text):
-        return ""
-    if len(text) > 55 or len(text.split()) > 7:
-        return ""
-    normalized = base._normalize_text(text)
-    if any(term in normalized for term in _PROSE_TERMS):
-        return ""
-    return text
-
-
-def _unique(values: Iterable[str]) -> list[str]:
-    out: list[str] = []
-    seen: set[str] = set()
-    for value in values:
-        text = _clean_candidate(value)
-        key = base._normalize_text(text)
-        if text and key and key not in seen:
-            seen.add(key)
-            out.append(text)
-    return out
-
-
 _SYSTEM_CODE_RE = re.compile(
     r"\bME\s*-?\s*A\s*-?\s*(\d{1,2})\b|\bMEA\s*(\d{1,2})\b",
     flags=re.I,
@@ -128,61 +67,6 @@ def _unique_system_population(work: pd.DataFrame) -> tuple[float, list[str], lis
     return total, sorted(codes), missing
 
 
-def _extract_community_names(text: object) -> list[str]:
-    source = base._clean_text(text)
-    if not source:
-        return []
-    candidates: list[str] = []
-
-    # Nombres explícitos: Calle La Mina, Urbanización Leiva Urcuyo, Barrio X, etc.
-    for match in _COMMUNITY_PREFIX_RE.finditer(source):
-        full = match.group(0).strip(" ,;:.-")
-        candidates.append(full)
-
-    # Referencias direccionales suelen contener el sector beneficiado:
-    # "hacia San Bosco", "en Rancho Redondo", "desde Ciudad Colón".
-    for match in _DIRECTION_PLACE_RE.finditer(source):
-        candidates.append(match.group(1))
-
-    return _unique(candidates)
-
-
-def _compact_communities(existing: object, need_row: pd.Series | None, geo_row: pd.Series) -> str:
-    candidates: list[str] = []
-
-    # Primero se aprovechan comunidades/ubicaciones ya registradas, pero nunca
-    # se conserva una frase larga como comunidad.
-    existing_text = base._clean_text(existing)
-    if existing_text:
-        for part in re.split(r"\s*[;|,]\s*", existing_text):
-            candidates.append(part)
-        candidates.extend(_extract_community_names(existing_text))
-
-    if need_row is not None:
-        for field in (
-            "objetivo_de_la_iniciativa",
-            "breve_descripcion",
-            "observacion",
-            "principal_reto_por_superar",
-            "zona",
-        ):
-            candidates.extend(_extract_community_names(need_row.get(field)))
-
-    cleaned = _unique(candidates)
-
-    # Provincia, cantón y distrito ya tienen columnas propias; no se repiten
-    # como comunidad cuando el texto recuperado coincide exactamente con ellos.
-    administrative = {
-        base._normalize_text(item)
-        for field in ("ubicacion_provincia", "ubicacion_canton", "distritos")
-        for item in re.split(r"\s*[,;]\s*", base._clean_text(geo_row.get(field)))
-        if base._clean_text(item)
-    }
-    cleaned = [item for item in cleaned if base._normalize_text(item) not in administrative]
-
-    return ", ".join(cleaned[:8])
-
-
 @st.cache_data(show_spinner=False, ttl=120, max_entries=4)
 def _prepare_work_cached(revision: int) -> pd.DataFrame:
     # ``revision`` forma parte de la llave de caché. La capa de datos la aumenta
@@ -194,33 +78,29 @@ def _prepare_work_cached(revision: int) -> pd.DataFrame:
 
     needs = base.read_table("necesidades")
     category_by_id: dict[int, str] = {}
-    need_by_id: dict[int, pd.Series] = {}
     if not needs.empty and "id" in needs.columns:
         for _, row in needs.iterrows():
             raw_id = pd.to_numeric(row.get("id"), errors="coerce")
             if pd.isna(raw_id):
                 continue
             nid = int(raw_id)
-            need_by_id[nid] = row
             category_by_id[nid] = base._clean_text(row.get("tipo_de_proyecto"))
 
     work = work.copy()
     work["id_necesidad"] = pd.to_numeric(work["necesidad_id"], errors="coerce").astype("Int64")
     work["categoria_clasificacion"] = work["necesidad_id"].map(category_by_id).fillna("")
 
-    # Comunidades: solo nombres cortos y específicos. Se descarta prosa de
-    # seguimiento y se intenta recuperar automáticamente nombres desde la
-    # descripción/objetivo/observaciones de la necesidad.
-    for idx, row in work.iterrows():
-        raw_id = pd.to_numeric(row.get("necesidad_id"), errors="coerce")
-        if pd.isna(raw_id):
-            continue
-        nid = int(raw_id)
-        work.at[idx, "comunidades"] = _compact_communities(
-            row.get("comunidades"),
-            need_by_id.get(nid),
-            row,
-        )
+    # Comunidades es un campo de ingreso manual. Ignorar las ubicaciones y
+    # descripciones inferidas por la versión base; una celda sin dato guardado
+    # queda en blanco y puede editarse, incluso para borrar un valor anterior.
+    tracking = base.read_optional_table("necesidades_seguimiento")
+    communities_by_id: dict[int, str] = {}
+    if not tracking.empty and {"necesidad_id", "comunidades"}.issubset(tracking.columns):
+        for record in tracking[["necesidad_id", "comunidades"]].to_dict("records"):
+            nid = pd.to_numeric(record["necesidad_id"], errors="coerce")
+            if pd.notna(nid):
+                communities_by_id[int(nid)] = base._clean_text(record["comunidades"])
+    work["comunidades"] = work["necesidad_id"].map(communities_by_id).fillna("")
 
     # La normalización del texto no depende del filtro: se hace una sola vez
     # por revisión, en vez de recorrer y normalizar toda la matriz al buscar.
@@ -238,6 +118,10 @@ def _prepare_work() -> pd.DataFrame:
 
 def _column_config() -> dict:
     config = base._column_config()
+    config["comunidades"] = st.column_config.TextColumn(
+        "Comunidades", width="large",
+        help="Ingreso manual de comunidades beneficiadas. Puede dejarse en blanco.",
+    )
     config.update(
         {
             "id_necesidad": st.column_config.NumberColumn(
@@ -421,8 +305,7 @@ def vista_seguimiento_necesidades() -> None:
     st.caption(
         "* La población asociada se suma una sola vez por código de sistema único presente "
         "en el resultado filtrado; no se vuelve a sumar por cada necesidad. "
-        "Comunidades muestra únicamente nombres específicos recuperables de las ubicaciones o "
-        "descripciones; no se asume que todas las comunidades de un distrito sean beneficiarias."
+        "Comunidades es un campo de ingreso manual; permanece en blanco hasta registrar un valor."
     )
     if missing_population_codes:
         st.warning(

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import hashlib
 import json
+from pathlib import Path
 from typing import Any
 
 import pandas as pd
@@ -31,14 +33,54 @@ base._canton_label = clean_canton_label
 base._district_label = clean_district_label
 
 
+def territorial_source_hashes() -> dict[str, str]:
+    """Identifica exactamente mapas y código que generaron el catálogo."""
+    root = Path(__file__).resolve().parent
+    paths = [
+        base.DISTRICTS_FILE, *sorted(base.GEO_DIR.glob("sistemas_*.json")),
+        root / "territorio_necesidades.py", root / "territorio_necesidades_v2.py",
+        root / "dta_nombres_gam.py", root / "dta_nombres_extra.py",
+        root / "geo_necesidades.py", root / "geo_necesidades_legacy.py",
+    ]
+    return {
+        str(path.relative_to(root)): hashlib.sha256(path.read_bytes()).hexdigest()
+        for path in paths
+    }
+
+
+def _load_precomputed_crosswalk(threshold: float) -> pd.DataFrame | None:
+    """Reutiliza el cálculo verificado; ante cambios vuelve al geoproceso vivo."""
+    try:
+        csv_path = base.GEO_DIR / "territorios_sistemas.csv"
+        manifest = json.loads((base.GEO_DIR / "territorios_sistemas.meta.json").read_text(encoding="utf-8"))
+        if (
+            manifest["algorithm"] != ALGORITHM_VERSION
+            or manifest["threshold"] != float(threshold)
+            or manifest["sources"] != territorial_source_hashes()
+            or manifest["csv_sha256"] != hashlib.sha256(csv_path.read_bytes()).hexdigest()
+        ):
+            return None
+        return pd.read_csv(csv_path, keep_default_na=False)
+    except (OSError, ValueError, KeyError):
+        return None
+
+
 @st.cache_data(show_spinner=False)
-def territorial_crosswalk(min_coverage_pct: float = MIN_ADMIN_COVERAGE_PCT) -> pd.DataFrame:
+def territorial_crosswalk(
+    min_coverage_pct: float = MIN_ADMIN_COVERAGE_PCT,
+    use_precomputed: bool = True,
+) -> pd.DataFrame:
     """Cruza sistemas con cantones/distritos usando la huella del sistema como denominador.
 
     Regla: una unidad administrativa se asocia cuando contiene más del 10 % del área
     total del sistema. Así se excluyen contactos marginales y, al mismo tiempo, un
     sistema pequeño no queda sin cantón solo porque el cantón completo sea muy grande.
     """
+    if use_precomputed:
+        precomputed = _load_precomputed_crosswalk(min_coverage_pct)
+        if precomputed is not None:
+            return precomputed
+
     payload = base.load_admin_geojson()
     admin_rows: list[dict[str, Any]] = []
 

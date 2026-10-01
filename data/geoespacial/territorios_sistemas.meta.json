@@ -1,0 +1,21 @@
+{
+  "algorithm": "v2-system-footprint-clean-admin-names",
+  "threshold": 10.0,
+  "sources": {
+    "data/geoespacial/distritos.geojson": "d0cd7ed64e39961aa4621d047c7964c95dfd191269d96519209ac5f006cfc054",
+    "data/geoespacial/sistemas_01.json": "c438078806ecec35d20c92fe6830cf770d8d50cab24e78a9d4df9a6b8e273588",
+    "data/geoespacial/sistemas_02.json": "8263639e870ce26ae7334c634a0fd6912c6f1a52e5e5580a2039b0de5c95aded",
+    "data/geoespacial/sistemas_03.json": "a3a14933f450a65a96c5ea5b1971b2ba54f10bce7148b1af92cc94454ff1590b",
+    "data/geoespacial/sistemas_04.json": "48066e60fb2b0cb1f7937f102c44b5fa1f5a7cedd4aef9af6d94ee5948bfcc96",
+    "data/geoespacial/sistemas_05.json": "988abac1d87ab292d69d4a2b47b53798a82436ba4d5279aa8a88969268ebc94f",
+    "data/geoespacial/sistemas_06.json": "e16132b21be1a66f59f5f852ca1fb4aa61f2fb7cde60adfbe244e6cca46c1f6d",
+    "data/geoespacial/sistemas_07.json": "462110527082dd7cb99429d1aa928dfe06a6b847c948fcda3e9a40505e9eedeb",
+    "territorio_necesidades.py": "5be7f90b5a6f21136dd80e8772a23bfd6e040b54de264e077d031051082c17bb",
+    "territorio_necesidades_v2.py": "895cab4aece727d9dd9dd772e00d9cf1e4efca6aa0248bdffec4f4c6b9430701",
+    "dta_nombres_gam.py": "cc9b2f33b116578d755554d0bd2fd4229da3a2d9715492fb85acd2829e94ddc7",
+    "dta_nombres_extra.py": "42e82d74593ebc40b10ef8ad4767f11dbd28d50afb9d43af12adcb1c51bd236a",
+    "geo_necesidades.py": "1b68d3b36d1a01dcef1c24a222b73740eed2630ba840f435fdb45081782be911",
+    "geo_necesidades_legacy.py": "21b6d6ffc1f08af4674cf9374ea63b9dcdc80843bdf62e9a3d6a79ebece0bc03"
+  },
+  "csv_sha256": "820a395c2200a93b91655f0c2990dafef5998e738d68035848acc600dd4438fd"
+}

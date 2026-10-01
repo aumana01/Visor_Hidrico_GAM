@@ -1,0 +1,115 @@
+sistema_codigo,sistema_nombre,nivel,provincia,canton,distrito,etiqueta,porcentaje_cobertura,umbral_pct
+MEA01,Tres Ríos,canton,San José,San José,,San José,20.360,10.000
+MEA01,Tres Ríos,canton,San José,Montes de Oca,,Montes de Oca,14.010,10.000
+MEA01,Tres Ríos,canton,San José,Curridabat,,Curridabat,20.318,10.000
+MEA01,Tres Ríos,canton,San José,Desamparados,,Desamparados,22.673,10.000
+MEA01,Tres Ríos,distrito,San José,Curridabat,Curridabat,Curridabat,8.582,0.000
+MEA02,Guadalupe,canton,San José,Moravia,,Moravia,23.348,10.000
+MEA02,Guadalupe,canton,San José,Goicoechea,,Goicoechea,75.876,10.000
+MEA02,Guadalupe,distrito,San José,Moravia,San Vicente,San Vicente,23.348,10.000
+MEA02,Guadalupe,distrito,San José,Goicoechea,Guadalupe,Guadalupe,32.260,10.000
+MEA02,Guadalupe,distrito,San José,Goicoechea,Calle Blancos,Calle Blancos,28.201,10.000
+MEA03,El Llano,canton,San José,Alajuelita,,Alajuelita,100.000,10.000
+MEA03,El Llano,distrito,San José,Alajuelita,San Antonio,San Antonio,100.000,10.000
+MEA04,Los Sitios,canton,San José,Moravia,,Moravia,51.046,10.000
+MEA04,Los Sitios,canton,San José,Tibás,,Tibás,44.082,10.000
+MEA04,Los Sitios,distrito,San José,Moravia,La Trinidad,La Trinidad,26.877,10.000
+MEA04,Los Sitios,distrito,San José,Moravia,San Vicente,San Vicente,23.649,10.000
+MEA04,Los Sitios,distrito,San José,Tibás,San Juan,San Juan,20.961,10.000
+MEA04,Los Sitios,distrito,San José,Tibás,Colima,Colima,10.153,10.000
+MEA05,Salitral,canton,San José,Santa Ana,,Santa Ana,99.950,10.000
+MEA05,Salitral,distrito,San José,Santa Ana,Uruca,Uruca,24.459,10.000
+MEA05,Salitral,distrito,San José,Santa Ana,Salitral,Salitral,65.499,10.000
+MEA06,San Juan De Dios,canton,San José,Desamparados,,Desamparados,89.687,10.000
+MEA06,San Juan De Dios,canton,San José,Aserrí,,Aserrí,10.313,10.000
+MEA06,San Juan De Dios,distrito,San José,Desamparados,San Juan de Dios,San Juan de Dios,40.697,10.000
+MEA06,San Juan De Dios,distrito,San José,Desamparados,San Miguel,San Miguel,19.052,10.000
+MEA06,San Juan De Dios,distrito,San José,Desamparados,San Rafael Arriba,San Rafael Arriba,29.938,10.000
+MEA07,San Antonio Escazú,canton,San José,Escazú,,Escazú,85.407,10.000
+MEA07,San Antonio Escazú,canton,San José,Alajuelita,,Alajuelita,14.593,10.000
+MEA07,San Antonio Escazú,distrito,San José,Escazú,San Antonio,San Antonio,85.407,10.000
+MEA07,San Antonio Escazú,distrito,San José,Alajuelita,San Antonio,San Antonio,11.998,10.000
+MEA08,Los Cuadros,canton,San José,Vázquez de Coronado,,Vázquez de Coronado,57.423,10.000
+MEA08,Los Cuadros,canton,San José,Goicoechea,,Goicoechea,41.040,10.000
+MEA08,Los Cuadros,distrito,San José,Vázquez de Coronado,Dulce Nombre de Jesús,Dulce Nombre de Jesús,23.658,10.000
+MEA08,Los Cuadros,distrito,San José,Vázquez de Coronado,San Isidro,San Isidro,27.532,10.000
+MEA08,Los Cuadros,distrito,San José,Goicoechea,Purral,Purral,15.242,10.000
+MEA08,Los Cuadros,distrito,San José,Goicoechea,Mata de Plátano,Mata de Plátano,19.467,10.000
+MEA09,Alajuelita,canton,San José,Alajuelita,,Alajuelita,99.999,10.000
+MEA09,Alajuelita,distrito,San José,Alajuelita,San Josecito,San Josecito,79.679,10.000
+MEA09,Alajuelita,distrito,San José,Alajuelita,San Antonio,San Antonio,15.346,10.000
+MEA10,Mata de Plátano,canton,San José,Goicoechea,,Goicoechea,93.104,10.000
+MEA10,Mata de Plátano,distrito,San José,Goicoechea,Mata de Plátano,Mata de Plátano,88.026,10.000
+MEA11,Guatuso,canton,San José,Desamparados,,Desamparados,100.000,10.000
+MEA11,Guatuso,distrito,San José,Desamparados,Patarrá,Patarrá,99.729,10.000
+MEA12,Quitirrisí,canton,San José,Mora,,Mora,100.000,10.000
+MEA12,Quitirrisí,distrito,San José,Mora,Colón,Colón,47.390,10.000
+MEA12,Quitirrisí,distrito,San José,Mora,Tabarcia,Tabarcia,27.313,10.000
+MEA12,Quitirrisí,distrito,San José,Mora,Guayabo,Guayabo,25.297,10.000
+MEA13,San Jerónimo de Moravia,canton,San José,Vázquez de Coronado,,Vázquez de Coronado,16.368,10.000
+MEA13,San Jerónimo de Moravia,canton,San José,Moravia,,Moravia,79.365,10.000
+MEA13,San Jerónimo de Moravia,distrito,San José,Vázquez de Coronado,Dulce Nombre de Jesús,Dulce Nombre de Jesús,16.368,10.000
+MEA13,San Jerónimo de Moravia,distrito,San José,Moravia,San Jerónimo,San Jerónimo,79.365,10.000
+MEA14,San Rafael de Coronado,canton,San José,Vázquez de Coronado,,Vázquez de Coronado,100.000,10.000
+MEA14,San Rafael de Coronado,distrito,San José,Vázquez de Coronado,Cascajal,Cascajal,32.001,10.000
+MEA14,San Rafael de Coronado,distrito,San José,Vázquez de Coronado,San Rafael,San Rafael,67.858,10.000
+MEA15,San Pablo,canton,Heredia,San Pablo,,San Pablo,91.576,10.000
+MEA15,San Pablo,distrito,Heredia,San Pablo,San Pablo,San Pablo,70.704,10.000
+MEA15,San Pablo,distrito,Heredia,San Pablo,Rincón de Sabanilla,Rincón de Sabanilla,20.872,10.000
+MEA16,San Antonio Potrerillos,canton,San José,Santa Ana,,Santa Ana,66.436,10.000
+MEA16,San Antonio Potrerillos,canton,San José,Mora,,Mora,27.607,10.000
+MEA16,San Antonio Potrerillos,distrito,San José,Santa Ana,Pozos,Pozos,24.038,10.000
+MEA16,San Antonio Potrerillos,distrito,San José,Santa Ana,Uruca,Uruca,15.776,10.000
+MEA16,San Antonio Potrerillos,distrito,San José,Santa Ana,Piedades,Piedades,16.779,10.000
+MEA16,San Antonio Potrerillos,distrito,San José,Mora,Colón,Colón,27.607,10.000
+MEA17,La Valencia,canton,San José,San José,,San José,96.713,10.000
+MEA17,La Valencia,distrito,San José,San José,Uruca,Uruca,23.084,10.000
+MEA17,La Valencia,distrito,San José,San José,Pavas,Pavas,29.617,10.000
+MEA17,La Valencia,distrito,San José,San José,Mata Redonda,Mata Redonda,13.091,10.000
+MEA17,La Valencia,distrito,San José,San José,Hatillo,Hatillo,14.590,10.000
+MEA18,Lamparas,canton,San José,Alajuelita,,Alajuelita,98.352,10.000
+MEA18,Lamparas,distrito,San José,Alajuelita,Concepción,Concepción,31.653,10.000
+MEA18,Lamparas,distrito,San José,Alajuelita,San Josecito,San Josecito,13.180,10.000
+MEA18,Lamparas,distrito,San José,Alajuelita,San Antonio,San Antonio,53.519,10.000
+MEA19,Puente Mulas,canton,San José,Santa Ana,,Santa Ana,26.308,10.000
+MEA19,Puente Mulas,canton,San José,Escazú,,Escazú,50.112,10.000
+MEA19,Puente Mulas,canton,San José,Alajuelita,,Alajuelita,17.685,10.000
+MEA19,Puente Mulas,distrito,San José,Santa Ana,Pozos,Pozos,13.124,10.000
+MEA19,Puente Mulas,distrito,San José,Escazú,San Rafael,San Rafael,31.209,10.000
+MEA19,Puente Mulas,distrito,San José,Santa Ana,Santa Ana,Santa Ana,11.799,10.000
+MEA19,Puente Mulas,distrito,San José,Escazú,San Antonio,San Antonio,10.220,10.000
+MEA20,Padre Carazo,canton,Cartago,La Unión,,La Unión,100.000,10.000
+MEA20,Padre Carazo,distrito,Cartago,La Unión,San Rafael,San Rafael,98.429,10.000
+MEA21,Chiverrales,canton,San José,Vázquez de Coronado,,Vázquez de Coronado,99.999,10.000
+MEA21,Chiverrales,distrito,San José,Vázquez de Coronado,Dulce Nombre de Jesús,Dulce Nombre de Jesús,12.629,10.000
+MEA21,Chiverrales,distrito,San José,Vázquez de Coronado,Cascajal,Cascajal,39.462,10.000
+MEA21,Chiverrales,distrito,San José,Vázquez de Coronado,San Rafael,San Rafael,47.908,10.000
+MEA22,Pizote,canton,San José,Montes de Oca,,Montes de Oca,30.602,10.000
+MEA22,Pizote,canton,Cartago,La Unión,,La Unión,67.646,10.000
+MEA22,Pizote,distrito,San José,Montes de Oca,San Rafael,San Rafael,30.602,10.000
+MEA22,Pizote,distrito,Cartago,La Unión,San Ramón,San Ramón,67.641,10.000
+MEA23,Barrio España,canton,San José,Santa Ana,,Santa Ana,100.000,10.000
+MEA23,Barrio España,distrito,San José,Santa Ana,Uruca,Uruca,41.431,10.000
+MEA23,Barrio España,distrito,San José,Santa Ana,Piedades,Piedades,58.569,10.000
+MEA24,Matinilla,canton,San José,Santa Ana,,Santa Ana,100.000,10.000
+MEA24,Matinilla,distrito,San José,Santa Ana,Salitral,Salitral,100.000,10.000
+MEA25,Sur de Escazú,canton,San José,Escazú,,Escazú,100.000,10.000
+MEA25,Sur de Escazú,distrito,San José,Escazú,San Antonio,San Antonio,100.000,10.000
+MEA26,Ticufres,canton,San José,Mora,,Mora,100.000,10.000
+MEA26,Ticufres,distrito,San José,Mora,Colón,Colón,100.000,10.000
+MEA27,Guarco,canton,Cartago,El Guarco,,El Guarco,90.077,10.000
+MEA27,Guarco,distrito,Cartago,El Guarco,El Tejar,El Tejar,84.895,10.000
+MEA28,Vista de Mar,canton,San José,Vázquez de Coronado,,Vázquez de Coronado,43.383,10.000
+MEA28,Vista de Mar,canton,San José,Goicoechea,,Goicoechea,56.623,10.000
+MEA28,Vista de Mar,distrito,San José,Vázquez de Coronado,San Isidro,San Isidro,43.383,10.000
+MEA28,Vista de Mar,distrito,San José,Goicoechea,Rancho Redondo,Rancho Redondo,56.293,10.000
+MEA29,Lajas,canton,San José,Escazú,,Escazú,100.000,10.000
+MEA29,Lajas,distrito,San José,Escazú,San Antonio,San Antonio,100.000,10.000
+MEA30,Jerico,canton,San José,Desamparados,,Desamparados,63.801,10.000
+MEA30,Jerico,canton,San José,Aserrí,,Aserrí,36.023,10.000
+MEA30,Jerico,distrito,San José,Desamparados,San Miguel,San Miguel,54.953,10.000
+MEA30,Jerico,distrito,San José,Aserrí,Salitrillos,Salitrillos,36.023,10.000
+MEA31,Puriscal,canton,San José,Puriscal,,Puriscal,91.065,10.000
+MEA31,Puriscal,distrito,San José,Puriscal,San Antonio,San Antonio,16.782,10.000
+MEA31,Puriscal,distrito,San José,Puriscal,Santiago,Santiago,31.124,10.000
+MEA31,Puriscal,distrito,San José,Puriscal,Mercedes Sur,Mercedes Sur,23.959,10.000

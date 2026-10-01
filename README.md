@@ -191,3 +191,24 @@ Si ya tiene Supabase creado con una versión anterior, vuelva a ejecutar `sql/01
 - El mapa usa Plotly/OpenStreetMap y muestra todos los proyectos con coordenadas válidas dentro de Costa Rica.
 - La Vista 4 permite borrar PDF seleccionados con confirmación.
 - La Vista 4 renderiza PDFs como imágenes de páginas usando PyMuPDF para evitar bloqueos del navegador con iframes PDF.
+
+## Rendimiento de Vista 3.3
+
+- Los ajustes de 3.2/3.3 se instalan una sola vez por proceso: las interacciones de Streamlit ya no acumulan funciones envolventes.
+- La búsqueda reutiliza texto normalizado en caché. La matriz conserva su vigencia de 120 segundos y se invalida después de escrituras; **Actualizar datos** permite renovarla manualmente.
+- El guardado envía únicamente las filas con cambios en campos de seguimiento. Se conservan los filtros, las columnas institucionales y el formulario de edición.
+- Las asociaciones territoriales persistidas siguen siendo la primera fuente. Para el respaldo local se incluye el catálogo derivado `data/geoespacial/territorios_sistemas.csv`, con los mismos 114 resultados del geoproceso vigente. Su manifiesto verifica las huellas SHA-256 de mapas, código y nombres administrativos, además del umbral y del CSV. Si no coinciden, se ejecuta el geoproceso vivo.
+
+Después de actualizar mapas o el código territorial, regenerar el catálogo con:
+
+```bash
+python scripts/build_territorial_cache.py
+```
+
+Validación de regresiones y rendimiento:
+
+```bash
+python -m unittest discover -s tests -v
+```
+
+En una prueba local con 197 necesidades, la preparación base inicial bajó de aproximadamente 6,5 s a 0,27 s. La preparación completa de 3.3 tomó 0,35 s y una lectura posterior desde caché menos de 1 ms. Estas mediciones no incluyen latencia de Supabase ni despliegue en producción.

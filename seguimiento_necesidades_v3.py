@@ -8,7 +8,7 @@ import streamlit as st
 
 import seguimiento_necesidades_v2 as base
 from ajustes_vistas_32_33 import STRICT_DISPLAY_COLUMNS
-from database import data_revision
+from database import clear_cache, data_revision
 
 
 # Orden de la Vista 3.3. Se conservan las 24 columnas institucionales y se
@@ -25,6 +25,14 @@ DISPLAY_COLUMNS = [
     "idea_proyecto",
     "descripcion_idea",
     *STRICT_DISPLAY_COLUMNS,
+]
+
+SEARCH_COLUMNS = [
+    "id_necesidad", "categoria_clasificacion", "codigo_interno",
+    "unidad_solicitante", "unidad_formula_idea", "posible_fuente_financiamiento",
+    "idea_proyecto", "descripcion_idea", "memo_formulario_necesidad",
+    "ubicacion_provincia", "ubicacion_canton", "distritos", "comunidades",
+    "codigo_nombre_sistema", "descripcion_avance",
 ]
 
 
@@ -89,7 +97,7 @@ def _unique(values: Iterable[str]) -> list[str]:
 
 
 _SYSTEM_CODE_RE = re.compile(
-    r"\\bME\\s*-?\\s*A\\s*-?\\s*(\\d{1,2})\\b|\\bMEA\\s*(\\d{1,2})\\b",
+    r"\bME\s*-?\s*A\s*-?\s*(\d{1,2})\b|\bMEA\s*(\d{1,2})\b",
     flags=re.I,
 )
 
@@ -175,7 +183,7 @@ def _compact_communities(existing: object, need_row: pd.Series | None, geo_row: 
     return ", ".join(cleaned[:8])
 
 
-@st.cache_data(show_spinner=False, ttl=120)
+@st.cache_data(show_spinner=False, ttl=120, max_entries=4)
 def _prepare_work_cached(revision: int) -> pd.DataFrame:
     # ``revision`` forma parte de la llave de caché. La capa de datos la aumenta
     # después de cualquier inserción, edición o eliminación hecha por la app.
@@ -214,6 +222,12 @@ def _prepare_work_cached(revision: int) -> pd.DataFrame:
             row,
         )
 
+    # La normalización del texto no depende del filtro: se hace una sola vez
+    # por revisión, en vez de recorrer y normalizar toda la matriz al buscar.
+    work["_search_text"] = (
+        work[SEARCH_COLUMNS].fillna("").astype(str).agg(" ".join, axis=1)
+        .map(base._normalize_text)
+    )
     return work
 
 
@@ -241,12 +255,36 @@ def _column_config() -> dict:
     return config
 
 
+def _changed_tracking_rows(edited: pd.DataFrame, original: pd.DataFrame) -> pd.DataFrame:
+    """Envía solo filas editadas y compara únicamente campos persistidos."""
+    columns = [column for column in base.TRACKING_FIELDS if column in edited.columns]
+    before = original.reindex(edited.index)[columns].copy()
+    after = edited[columns].copy()
+    for column in columns:
+        if column == "fecha_recurso_amparo":
+            before[column] = pd.to_datetime(before[column], errors="coerce").dt.normalize()
+            after[column] = pd.to_datetime(after[column], errors="coerce").dt.normalize()
+        elif column in {"priorizacion_region", "estado_sistema_ba"}:
+            before[column] = pd.to_numeric(before[column], errors="coerce")
+            after[column] = pd.to_numeric(after[column], errors="coerce")
+        else:
+            before[column] = before[column].map(base._clean_text)
+            after[column] = after[column].map(base._clean_text)
+    equal = before.eq(after).fillna(False) | (before.isna() & after.isna())
+    return edited.loc[~equal.all(axis=1)].copy()
+
+
 def vista_seguimiento_necesidades() -> None:
     st.subheader("Vista 3.3 · Banco de Ideas de Proyectos AyA")
     st.caption(
         "Formato EST-02-02-F4 · Seguimiento de necesidades GAM. "
         "Incluye ID, categoría/clasificación y los campos institucionales del Banco de Ideas."
     )
+
+    if st.button("Actualizar datos", key="banco_refresh_data"):
+        clear_cache()
+        _prepare_work_cached.clear()
+        st.rerun()
 
     work = _prepare_work()
     if work.empty:
@@ -354,26 +392,8 @@ def vista_seguimiento_necesidades() -> None:
 
     normalized_keyword = base._normalize_text(keyword)
     if normalized_keyword:
-        search_cols = [
-            "id_necesidad",
-            "categoria_clasificacion",
-            "codigo_interno",
-            "unidad_solicitante",
-            "unidad_formula_idea",
-            "posible_fuente_financiamiento",
-            "idea_proyecto",
-            "descripcion_idea",
-            "memo_formulario_necesidad",
-            "ubicacion_provincia",
-            "ubicacion_canton",
-            "distritos",
-            "comunidades",
-            "codigo_nombre_sistema",
-            "descripcion_avance",
-        ]
-        searchable = filtered[search_cols].fillna("").astype(str).agg(" ".join, axis=1)
         filtered = filtered[
-            searchable.apply(lambda value: normalized_keyword in base._normalize_text(value))
+            filtered["_search_text"].str.contains(normalized_keyword, regex=False, na=False)
         ]
 
     m1, m2, m3, m4 = st.columns(4)
@@ -448,8 +468,12 @@ def vista_seguimiento_necesidades() -> None:
         )
 
     if save_requested:
+        changed = _changed_tracking_rows(edited, editor)
+        if changed.empty:
+            st.info("No hay cambios de seguimiento para guardar.")
+            return
         try:
-            base._save_tracking(edited)
+            base._save_tracking(changed)
         except Exception as exc:
             st.error(
                 "No fue posible guardar el seguimiento. "

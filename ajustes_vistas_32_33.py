@@ -165,6 +165,12 @@ def _render_folium_map(map_object, height: int = 700, **_: Any):
 
 
 def apply_patches(seguimiento_module) -> None:
+    # app.py se ejecuta de nuevo en cada interacción de Streamlit, pero los
+    # módulos importados sobreviven. Sin esta guarda cada rerun envuelve otra
+    # vez las funciones y multiplica la preparación, lecturas e inferencias.
+    if getattr(seguimiento_module, "_vistas_32_33_patches_applied", False):
+        return
+
     # 1) Orden visible estricto de las 24 columnas solicitadas.
     seguimiento_module.DISPLAY_COLUMNS = list(STRICT_DISPLAY_COLUMNS)
 
@@ -217,12 +223,11 @@ def apply_patches(seguimiento_module) -> None:
 
             # Revalida el avance con toda la evidencia, incluso si Supabase tenía
             # un NO de default creado por SQL 09.
-            evidence_row = pd.Series(dtype=object)
+            evidence_row = {}
             if need_row is not None:
-                evidence_row = need_row.copy()
+                evidence_row.update(need_row.to_dict())
             if track_row is not None:
-                for key, value in track_row.items():
-                    evidence_row[key] = value
+                evidence_row.update(track_row.to_dict())
             if _has_progress_evidence(evidence_row):
                 work.at[idx, "proyecto_avance"] = "SI"
                 output_row = work.loc[idx]
@@ -274,3 +279,4 @@ def apply_patches(seguimiento_module) -> None:
     # Solo afecta territorio_necesidades_v2; el editor de puntos sigue usando
     # streamlit-folium y por tanto mantiene la captura de clics.
     territorio_v2.st_folium = _render_folium_map
+    seguimiento_module._vistas_32_33_patches_applied = True

@@ -153,11 +153,20 @@ def territory_by_need(needs: pd.DataFrame) -> dict[int, dict[str, list[str]]]:
     if expected_ids and expected_ids.issubset(persisted):
         return {nid: persisted[nid] for nid in expected_ids}
 
+    # Si solo faltan necesidades nuevas, asociar únicamente esas filas. Las
+    # existentes usan la misma fuente persistida que en el caso completo.
+    missing_ids = expected_ids - set(persisted)
+    pending = needs[
+        pd.to_numeric(needs["id"], errors="coerce").isin(missing_ids)
+    ].copy()
+    if pending.empty:
+        return {nid: persisted[nid] for nid in expected_ids if nid in persisted}
+
     generated: dict[int, dict[str, list[str]]] = {}
 
     try:
         crosswalk = territorio_v2.territorial_crosswalk()
-        work = _inject_relation_codes(needs)
+        work = _inject_relation_codes(pending)
 
         # Caso institucional: una necesidad asociada explícitamente a todos los
         # sistemas hereda todos los códigos cartografiados.

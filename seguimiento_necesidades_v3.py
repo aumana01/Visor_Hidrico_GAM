@@ -26,6 +26,12 @@ DISPLAY_COLUMNS = [
     *STRICT_DISPLAY_COLUMNS,
 ]
 
+AUTOMATIC_COLUMNS = [
+    "id_necesidad", "categoria_clasificacion", "idea_proyecto", "descripcion_idea",
+    "ubicacion_provincia", "ubicacion_canton", "distritos", "poblacion_beneficiada",
+    "codigo_nombre_sistema", "servicios_atendidos", "condicion_hidrica", "estado_sistema_bh",
+]
+
 SEARCH_COLUMNS = [
     "id_necesidad", "categoria_clasificacion", "codigo_interno",
     "unidad_solicitante", "unidad_formula_idea", "posible_fuente_financiamiento",
@@ -136,6 +142,20 @@ def _column_config() -> dict:
             ),
         }
     )
+    # El editor de Streamlit dibuja la tabla en canvas y no admite estilos
+    # de celda en columnas editables. Los indicadores de color del encabezado
+    # identifican ambos grupos sin afectar la edición ni agregar otra tabla.
+    for column in DISPLAY_COLUMNS:
+        automatic = column in AUTOMATIC_COLUMNS
+        definition = config[column]
+        definition["label"] = f"{'🟦' if automatic else '🟩'} {definition['label']}"
+        description = (
+            "Campo automático. Solo lectura en esta vista."
+            if automatic else "Campo editable. Guarde los cambios de seguimiento para conservarlos."
+        )
+        previous_help = definition.get("help")
+        definition["help"] = f"{description} {previous_help}" if previous_help else description
+        definition["disabled"] = automatic
     return config
 
 
@@ -315,22 +335,8 @@ def vista_seguimiento_necesidades() -> None:
         )
 
     st.markdown("##### Banco de Ideas de Proyectos AyA")
+    st.caption("🟦 Campos automáticos · Solo lectura     🟩 Campos editables · Ingreso o ajuste manual")
     editor = filtered[["necesidad_id", *DISPLAY_COLUMNS]].copy().set_index("necesidad_id")
-
-    disabled = [
-        "id_necesidad",
-        "categoria_clasificacion",
-        "idea_proyecto",
-        "descripcion_idea",
-        "ubicacion_provincia",
-        "ubicacion_canton",
-        "distritos",
-        "poblacion_beneficiada",
-        "codigo_nombre_sistema",
-        "servicios_atendidos",
-        "condicion_hidrica",
-        "estado_sistema_bh",
-    ]
 
     # El formulario agrupa las ediciones. Sin él, cada cambio de una celda
     # vuelve a ejecutar y renderizar toda la vista de más de treinta columnas.
@@ -341,7 +347,7 @@ def vista_seguimiento_necesidades() -> None:
             hide_index=True,
             height=700,
             num_rows="fixed",
-            disabled=disabled,
+            disabled=AUTOMATIC_COLUMNS,
             column_config=_column_config(),
             key="editor_banco_ideas_aya_v5",
         )

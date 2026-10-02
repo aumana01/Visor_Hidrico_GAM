@@ -17,6 +17,7 @@ from database import clear_cache, data_revision
 DISPLAY_COLUMNS = [
     "id_necesidad",
     "categoria_clasificacion",
+    "tipo_licitacion",
     "codigo_interno",
     "unidad_solicitante",
     "unidad_formula_idea",
@@ -33,7 +34,7 @@ AUTOMATIC_COLUMNS = [
 ]
 
 SEARCH_COLUMNS = [
-    "id_necesidad", "categoria_clasificacion", "codigo_interno",
+    "id_necesidad", "categoria_clasificacion", "tipo_licitacion", "codigo_interno",
     "unidad_solicitante", "unidad_formula_idea", "posible_fuente_financiamiento",
     "idea_proyecto", "descripcion_idea", "memo_formulario_necesidad",
     "ubicacion_provincia", "ubicacion_canton", "distritos", "comunidades",

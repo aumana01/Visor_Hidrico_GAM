@@ -101,6 +101,13 @@ class SeguimientoPerformanceTests(unittest.TestCase):
         self.assertEqual(missing, [])
         self.assertEqual(total, base.SYSTEM_DATA["MEA01"]["poblacion"] + base.SYSTEM_DATA["MEA02"]["poblacion"])
 
+    def test_tipo_licitacion_follows_category_and_is_editable(self):
+        category_index = view.DISPLAY_COLUMNS.index("categoria_clasificacion")
+        self.assertEqual(view.DISPLAY_COLUMNS[category_index + 1], "tipo_licitacion")
+        self.assertIn("tipo_licitacion", base.TRACKING_FIELDS)
+        self.assertNotIn("tipo_licitacion", view.AUTOMATIC_COLUMNS)
+        self.assertIn("tipo_licitacion", view._column_config())
+
     def test_app_filters_refresh_and_save_without_changes(self):
         app = AppTest.from_file(str(ROOT / "app.py"), default_timeout=30)
         app.session_state["vista_principal"] = "seguimiento_necesidades"

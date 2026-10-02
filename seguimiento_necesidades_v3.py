@@ -197,7 +197,7 @@ def vista_seguimiento_necesidades() -> None:
         return
 
     st.markdown("##### Filtros")
-    f1, f2, f3 = st.columns([1.0, 1.6, 1.4])
+    f1, f2, f_licitacion, f3 = st.columns([1.0, 1.6, 1.3, 1.4])
     id_options = sorted(
         pd.to_numeric(work["id_necesidad"], errors="coerce").dropna().astype(int).unique().tolist()
     )
@@ -214,6 +214,12 @@ def vista_seguimiento_necesidades() -> None:
         "Categoría / clasificación",
         categories,
         key="banco_filter_category",
+        placeholder="Todas",
+    )
+    selected_licitaciones = f_licitacion.multiselect(
+        "Tipo de licitación",
+        [option for option in base.LICITACION_OPTIONS if option] + ["Pendiente de definir"],
+        key="banco_filter_licitacion",
         placeholder="Todas",
     )
     selected_states = f3.multiselect(
@@ -264,6 +270,9 @@ def vista_seguimiento_necesidades() -> None:
         filtered = filtered[
             filtered["categoria_clasificacion"].isin(selected_categories)
         ]
+    if selected_licitaciones:
+        selected = ["" if value == "Pendiente de definir" else value for value in selected_licitaciones]
+        filtered = filtered[filtered["tipo_licitacion"].fillna("").isin(selected)]
     if selected_states:
         filtered = filtered[filtered["estado_actual_aya"].isin(selected_states)]
     if selected_provinces:
@@ -321,6 +330,18 @@ def vista_seguimiento_necesidades() -> None:
             f"Suma de {len(unique_system_codes)} sistema(s) único(s) presentes "
             "en el resultado filtrado."
         ),
+    )
+
+    m_menor, m_mayor = st.columns(2)
+    m_menor.metric(
+        "Licitación menor",
+        f"{int(filtered['tipo_licitacion'].eq('Licitación menor').sum()):,}",
+        help="Cantidad de ideas / necesidades con licitación menor en el resultado filtrado.",
+    )
+    m_mayor.metric(
+        "Licitación mayor",
+        f"{int(filtered['tipo_licitacion'].eq('Licitación mayor').sum()):,}",
+        help="Cantidad de ideas / necesidades con licitación mayor en el resultado filtrado.",
     )
 
     st.caption(

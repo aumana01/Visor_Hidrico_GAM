@@ -14,6 +14,7 @@ REGION_DEFAULT = "GAM"
 FUENTE_FINANCIAMIENTO_DEFAULT = "Pendiente"
 ESTADO_AYA_OPTIONS = ["En lista de espera", "Formulación de Iniciativa"]
 SI_NO_OPTIONS = ["NO", "SI"]
+LICITACION_OPTIONS = ["", "Licitación menor", "Licitación mayor"]
 MANDATO_OPTIONS = [
     "No",
     "Recurso de amparo",
@@ -63,6 +64,7 @@ TRACKING_FIELDS = [
     "unidad_solicitante",
     "unidad_formula_idea",
     "posible_fuente_financiamiento",
+    "tipo_licitacion",
     "tipo_proyecto_banco",
     "memo_formulario_necesidad",
     "acuerdo_cdp",
@@ -559,6 +561,7 @@ def _prepare_work() -> pd.DataFrame:
             "unidad_solicitante": _clean_text(row.get("unidad_solicitante")) or "GAM",
             "unidad_formula_idea": _infer_formulation_unit(row),
             "posible_fuente_financiamiento": _clean_text(row.get("posible_fuente_financiamiento")) or FUENTE_FINANCIAMIENTO_DEFAULT,
+            "tipo_licitacion": _clean_text(row.get("tipo_licitacion")),
             "idea_proyecto": _clean_text(row.get("objetivo_de_la_iniciativa")) or _clean_text(row.get("breve_descripcion")),
             "descripcion_idea": _clean_text(row.get("breve_descripcion")),
             "tipo_proyecto_banco": _clean_text(row.get("tipo_proyecto_banco")) or TIPO_PROYECTO_DEFAULT,
@@ -596,6 +599,12 @@ def _column_config() -> dict[str, Any]:
         "unidad_solicitante": st.column_config.TextColumn("Unidad solicitante", width="medium"),
         "unidad_formula_idea": st.column_config.TextColumn("Unidad que formula la idea", width="medium"),
         "posible_fuente_financiamiento": st.column_config.TextColumn("Posible fuente de financiamiento", width="medium"),
+        "tipo_licitacion": st.column_config.SelectboxColumn(
+            "Tipo de licitación",
+            options=LICITACION_OPTIONS,
+            width="medium",
+            help="Clasificación manual del procedimiento requerido. Déjelo en blanco mientras no se haya definido.",
+        ),
         "idea_proyecto": st.column_config.TextColumn("Idea de proyecto", width="large"),
         "descripcion_idea": st.column_config.TextColumn("Descripción de la idea", width="large"),
         "tipo_proyecto_banco": st.column_config.TextColumn("Tipo de proyecto", width="medium"),
@@ -637,7 +646,7 @@ def _save_tracking(edited: pd.DataFrame) -> None:
 
     for column in [
         "codigo_interno", "unidad_solicitante", "unidad_formula_idea",
-        "posible_fuente_financiamiento", "tipo_proyecto_banco",
+        "posible_fuente_financiamiento", "tipo_licitacion", "tipo_proyecto_banco",
         "memo_formulario_necesidad", "region_aya", "comunidades",
         "descripcion_avance",
     ]:
@@ -648,6 +657,10 @@ def _save_tracking(edited: pd.DataFrame) -> None:
         "compromiso_social", "estudios_terrenos", "proyecto_avance",
     ]:
         save[column] = save[column].apply(_normalize_yes_no)
+
+    save["tipo_licitacion"] = save["tipo_licitacion"].apply(
+        lambda value: _clean_text(value) if _clean_text(value) in LICITACION_OPTIONS else ""
+    )
 
     save["estado_actual_aya"] = save["estado_actual_aya"].apply(
         lambda value: value if _clean_text(value) in ESTADO_AYA_OPTIONS else ESTADO_AYA_OPTIONS[0]

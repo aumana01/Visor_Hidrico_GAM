@@ -12,6 +12,7 @@ from shapely.ops import transform, unary_union
 from streamlit_folium import st_folium
 
 import geo_necesidades_legacy as legacy
+from resumen_territorial_32 import render_territorial_counters
 import territorio_necesidades as base
 from database import read_table
 from dta_nombres_gam import canton_name, district_name, province_name
@@ -370,6 +371,14 @@ def render_consultation(
     )
 
     st.markdown("#### Indicadores consolidados")
+    render_territorial_counters(
+        filtered_needs,
+        crosswalk,
+        selected_systems=selected_systems,
+        selected_provinces=selected_provinces,
+        selected_cantons=selected_cantons,
+        selected_districts=selected_districts,
+    )
     legacy.render_executive_metrics(filtered_needs)
 
     selected_codes = (

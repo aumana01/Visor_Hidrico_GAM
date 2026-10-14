@@ -194,6 +194,97 @@ def consolidated_territory(
     return tables
 
 
+def _quantity(number: int, singular: str, plural: str) -> str:
+    """Expresar cantidades en español con concordancia gramatical."""
+    return f"{number} {singular if number == 1 else plural}"
+
+
+def _enumerate_names(names: list[str]) -> str:
+    """Unir nombres en prosa (A, B y C) en lugar de una tabla o lista."""
+    if not names:
+        return ""
+    if len(names) == 1:
+        return names[0]
+    return ", ".join(names[:-1]) + " y " + names[-1]
+
+
+def _render_territorial_narrative(kind: str, tables: dict[str, pd.DataFrame]) -> None:
+    """Detalle narrativo según las necesidades filtradas, sin tablas."""
+    detail = tables[kind]
+    if detail.empty:
+        st.info("No hay registros asociados a los filtros seleccionados.")
+        return
+
+    count = len(detail)
+    if kind == "sistemas":
+        st.markdown(
+            f"En la selección actual se identifican **"
+            f"{_quantity(count, 'sistema de abastecimiento', 'sistemas de abastecimiento')}"
+            "** distintos vinculados con necesidades de inversión. "
+            "A continuación se indican sus nombres, la cantidad de necesidades "
+            "asociadas a cada uno y las provincias relacionadas con su cobertura."
+        )
+        descriptions = []
+        for _, item in detail.iterrows():
+            code = _text(item["Código"])
+            name = _text(item["Sistema de abastecimiento"])
+            system_label = f"{code} — {name}" if code and code.casefold() != name.casefold() else (name or code)
+            provinces = [
+                part.strip() for part in _text(item["Provincias"]).split(";") if part.strip()
+            ]
+            territorial_phrase = (
+                "con cobertura asociada en " + _enumerate_names(provinces)
+                if provinces else "sin asociación provincial determinada"
+            )
+            needs_count = int(item["Necesidades asociadas"])
+            descriptions.append(
+                f"**{system_label}** ("
+                f"{_quantity(needs_count, 'necesidad asociada', 'necesidades asociadas')}; "
+                f"{territorial_phrase})"
+            )
+        # Párrafos acotados para que las selecciones numerosas sigan siendo legibles.
+        for start in range(0, len(descriptions), 5):
+            st.markdown(_enumerate_names(descriptions[start:start + 5]) + ".")
+
+    elif kind == "provincias":
+        st.markdown(
+            f"Las necesidades consultadas tienen relación territorial con "
+            f"**{_quantity(count, 'provincia', 'provincias')}**. "
+            "El desglose considera únicamente las provincias asociadas "
+            "a los sistemas incluidos en los filtros."
+        )
+        descriptions = []
+        for _, item in detail.iterrows():
+            descriptions.append(
+                f"En **{item['Provincia']}** se identifican "
+                f"**{_quantity(int(item['Cantones']), 'cantón', 'cantones')}**, "
+                f"**{_quantity(int(item['Sistemas']), 'sistema de abastecimiento', 'sistemas de abastecimiento')}** "
+                f"y **{_quantity(int(item['Necesidades asociadas']), 'necesidad vinculada', 'necesidades vinculadas')}**"
+            )
+        for start in range(0, len(descriptions), 3):
+            st.markdown(". ".join(descriptions[start:start + 3]) + ".")
+
+    elif kind == "cantones":
+        st.markdown(
+            f"El alcance territorial de las necesidades seleccionadas comprende "
+            f"**{_quantity(count, 'cantón', 'cantones')}**. "
+            "Cada cantón se considera una sola vez dentro de su provincia, "
+            "aunque esté relacionado con varios sistemas o necesidades."
+        )
+        for province, group in detail.groupby("Provincia", sort=True):
+            descriptions = []
+            for _, item in group.iterrows():
+                descriptions.append(
+                    f"**{item['Cantón']}** ("
+                    f"{_quantity(int(item['Sistemas']), 'sistema', 'sistemas')} y "
+                    f"{_quantity(int(item['Necesidades asociadas']), 'necesidad', 'necesidades')})"
+                )
+            st.markdown(
+                f"En la provincia de **{province}** se identifican "
+                f"{_enumerate_names(descriptions)}."
+            )
+
+
 def render_territorial_counters(
     needs: pd.DataFrame,
     crosswalk: pd.DataFrame,
@@ -236,10 +327,4 @@ def render_territorial_counters(
                 "Totales únicos según los filtros activos. Las necesidades asociadas "
                 "se contabilizan una sola vez dentro de cada fila del resumen."
             )
-            if tables[active].empty:
-                st.info("No hay registros asociados a los filtros seleccionados.")
-            else:
-                st.dataframe(
-                    tables[active], hide_index=True, use_container_width=True,
-                    height=min(430, 38 * (len(tables[active]) + 1) + 12),
-                )
+            _render_territorial_narrative(active, tables)

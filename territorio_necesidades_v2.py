@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
+import unicodedata
 from pathlib import Path
 from typing import Any
 
@@ -237,6 +239,92 @@ def territorial_crosswalk(
     return pd.DataFrame(records)
 
 
+# Campos de texto útiles para localizar una necesidad por palabra o frase.
+# Se incluyen campos territoriales generados por associate_needs.
+KEYWORD_FIELDS = (
+    "objetivo_de_la_iniciativa",
+    "breve_descripcion",
+    "tipo_de_proyecto",
+    "codigo_de_sistema",
+    "sistema_de_abastecimiento",
+    "zona",
+    "principal_reto_por_superar",
+    "observacion",
+    "responsabilidad_atencion",
+    "prioridad",
+    "estado",
+    "propuesta_solucion",
+    "comunidades",
+    "ubicacion_provincia",
+    "ubicacion_canton",
+    "provincias_asociadas",
+    "cantones_asociados",
+    "distritos_asociados",
+)
+KEYWORD_LOCATION_FIELDS = ("nombre_ubicacion", "observacion", "tipo_ubicacion")
+
+
+def _keyword_string(value: Any) -> str:
+    """Convertir textos simples o listas territoriales en texto buscable."""
+    if isinstance(value, (list, tuple, set)):
+        return " ".join(_keyword_string(item) for item in value)
+    if isinstance(value, dict):
+        return " ".join(_keyword_string(item) for item in value.values())
+    if value is None:
+        return ""
+    try:
+        if pd.isna(value):
+            return ""
+    except (TypeError, ValueError):
+        return ""
+    value = str(value).strip()
+    return "" if value.casefold() in {"nan", "none", "<na>", "nat"} else value
+
+
+def _keyword_normalize(value: Any) -> str:
+    """Búsqueda sin distinción de mayúsculas, tildes ni puntuación."""
+    text = unicodedata.normalize("NFKD", _keyword_string(value).casefold())
+    text = "".join(char for char in text if not unicodedata.combining(char))
+    return re.sub(r"[^a-z0-9]+", " ", text).strip()
+
+
+def filter_needs_by_keyword(
+    needs: pd.DataFrame, locations: pd.DataFrame, keyword: str,
+) -> pd.DataFrame:
+    """Mantener las necesidades que incluyen todos los términos de búsqueda.
+
+    La búsqueda también considera nombres/observaciones de puntos geográficos
+    sin incluir ubicaciones de necesidades no coincidentes en el mapa.
+    """
+    terms = _keyword_normalize(keyword).split()
+    if not terms or needs.empty:
+        return needs
+
+    columns = [column for column in KEYWORD_FIELDS if column in needs.columns]
+    location_columns = [
+        column for column in KEYWORD_LOCATION_FIELDS if column in locations.columns
+    ]
+    location_text_by_need: dict[int, list[str]] = {}
+    if location_columns and "necesidad_id" in locations.columns:
+        for _, location in locations.iterrows():
+            raw_id = pd.to_numeric(location.get("necesidad_id"), errors="coerce")
+            if pd.isna(raw_id):
+                continue
+            location_text_by_need.setdefault(int(raw_id), []).extend(
+                _keyword_string(location.get(column)) for column in location_columns
+            )
+
+    def matched(row: pd.Series) -> bool:
+        pieces = [_keyword_string(row.get(column)) for column in columns]
+        raw_id = pd.to_numeric(row.get("id"), errors="coerce")
+        if pd.notna(raw_id):
+            pieces.extend(location_text_by_need.get(int(raw_id), []))
+        combined = _keyword_normalize(" ".join(pieces))
+        return all(term in combined for term in terms)
+
+    return needs.loc[needs.apply(matched, axis=1)].copy()
+
+
 def _join_names(value: object) -> str:
     if isinstance(value, (list, tuple, set)):
         return ", ".join(str(item) for item in value if str(item).strip())
@@ -310,6 +398,16 @@ def render_consultation(
     include_infrastructure = row2[2].checkbox(
         "Incluir infraestructura de referencia", value=True, key="geo_include_infrastructure"
     )
+    keyword = st.text_input(
+        "Buscar por palabra clave",
+        key="geo_filter_keyword",
+        placeholder="Ej.: fugas, tanque, bombeo, Guadalupe, MEA01...",
+        help=(
+            "Busca en el nombre, descripción, categoría, observaciones, sistema "
+            "de abastecimiento, provincia, cantón, distrito y ubicaciones. "
+            "Ignora tildes y mayúsculas; con varias palabras exige que todas coincidan."
+        ),
+    )
 
     filtered_needs = needs.copy()
     if selected_systems:
@@ -340,6 +438,8 @@ def render_consultation(
         filtered_needs = filtered_needs[
             filtered_needs["tipo_de_proyecto"].astype(str).isin(selected_types)
         ]
+    if keyword.strip():
+        filtered_needs = filter_needs_by_keyword(filtered_needs, locations, keyword)
 
     need_ids = set(pd.to_numeric(filtered_needs.get("id"), errors="coerce").dropna().astype(int))
     filtered_locations = (
@@ -352,6 +452,9 @@ def render_consultation(
         ]
         matched = set(pd.to_numeric(filtered_locations.get("necesidad_id"), errors="coerce").dropna().astype(int))
         filtered_needs = filtered_needs[pd.to_numeric(filtered_needs["id"], errors="coerce").isin(matched)]
+
+    if keyword.strip() and filtered_needs.empty:
+        st.info("No se encontraron necesidades para esa palabra clave con los filtros actuales.")
 
     st.markdown("#### Detalle descriptivo de necesidades e iniciativas")
     detail = _clean_detail_table(filtered_needs, filtered_locations)
@@ -383,7 +486,7 @@ def render_consultation(
 
     selected_codes = (
         legacy.clean_multi_options(filtered_needs.get("codigo_de_sistema", pd.Series(dtype=str)))
-        if selected_systems or selected_provinces or selected_cantons or selected_districts else []
+        if selected_systems or selected_provinces or selected_cantons or selected_districts or keyword.strip() else []
     )
     map_object = legacy.build_map(
         filtered_needs,
@@ -468,7 +571,15 @@ def vista_mapa_necesidades_territorial() -> None:
         st.error(f"No fue posible ejecutar el geoproceso territorial: {exc}")
         tabs = st.tabs(["Mapa de consulta", "Georreferenciar / editar"])
         with tabs[0]:
-            legacy.render_consultation(needs, locations)
+            keyword = st.text_input(
+                "Buscar por palabra clave",
+                key="geo_filter_keyword",
+                placeholder="Ej.: fugas, tanque, bombeo, Guadalupe, MEA01...",
+            )
+            matched_needs = filter_needs_by_keyword(needs, locations, keyword)
+            if keyword.strip() and matched_needs.empty:
+                st.info("No se encontraron necesidades para esa palabra clave.")
+            legacy.render_consultation(matched_needs, locations)
         with tabs[1]:
             legacy.render_editor(needs, locations)
         return

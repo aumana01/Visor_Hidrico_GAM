@@ -324,7 +324,8 @@ def render_territorial_counters(
         with st.container(border=True):
             st.markdown(f"**Detalle consolidado · {title}**")
             st.caption(
-                "Totales únicos según los filtros activos. Las necesidades asociadas "
-                "se contabilizan una sola vez dentro de cada fila del resumen."
+                "Los datos corresponden a los filtros activos. Cada sistema, provincia "
+                "o cantón se cuenta una sola vez, y las necesidades se consolidan "
+                "sin duplicaciones dentro de cada elemento."
             )
             _render_territorial_narrative(active, tables)

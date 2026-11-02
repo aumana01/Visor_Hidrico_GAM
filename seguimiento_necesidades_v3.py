@@ -7,7 +7,8 @@ import streamlit as st
 
 import seguimiento_necesidades_v2 as base
 from ajustes_vistas_32_33 import STRICT_DISPLAY_COLUMNS
-from database import clear_cache, data_revision
+from app_core import ATENCION_NECESIDAD_OPTIONS, COSTO_NECESIDAD_OPTIONS, NECESIDAD_LABELS
+from database import clear_cache, data_revision, upsert_rows
 
 
 # Orden de la Vista 3.3. Se conservan las 24 columnas institucionales y se
@@ -18,6 +19,11 @@ DISPLAY_COLUMNS = [
     "id_necesidad",
     "categoria_clasificacion",
     "tipo_licitacion",
+    "costo",
+    "caudal_estimado_lps",
+    "volumen_estimado_m3",
+    "km_estimado",
+    "responsabilidad_atencion",
     "codigo_interno",
     "unidad_solicitante",
     "unidad_formula_idea",
@@ -26,11 +32,22 @@ DISPLAY_COLUMNS = [
     "descripcion_idea",
     *STRICT_DISPLAY_COLUMNS,
 ]
+# Las coordenadas corresponden a las ubicaciones de 3.2; se mantienen en
+# solo lectura aquí porque una necesidad puede tener varios puntos.
+DISPLAY_COLUMNS[DISPLAY_COLUMNS.index("comunidades"):DISPLAY_COLUMNS.index("comunidades")] = [
+    "latitud", "longitud",
+]
+NEED_EDIT_FIELDS = (
+    "costo", "caudal_estimado_lps", "volumen_estimado_m3",
+    "km_estimado", "responsabilidad_atencion",
+)
+NEED_NUMERIC_FIELDS = ("caudal_estimado_lps", "volumen_estimado_m3", "km_estimado")
 
 AUTOMATIC_COLUMNS = [
     "id_necesidad", "categoria_clasificacion", "idea_proyecto", "descripcion_idea",
     "ubicacion_provincia", "ubicacion_canton", "distritos", "poblacion_beneficiada",
     "codigo_nombre_sistema", "servicios_atendidos", "condicion_hidrica", "estado_sistema_bh",
+    "latitud", "longitud",
 ]
 
 SEARCH_COLUMNS = [
@@ -39,6 +56,7 @@ SEARCH_COLUMNS = [
     "idea_proyecto", "descripcion_idea", "memo_formulario_necesidad",
     "ubicacion_provincia", "ubicacion_canton", "distritos", "comunidades",
     "codigo_nombre_sistema", "descripcion_avance",
+    *NEED_EDIT_FIELDS, "latitud", "longitud",
 ]
 
 
@@ -97,6 +115,52 @@ def _prepare_work_cached(revision: int) -> pd.DataFrame:
     work["id_necesidad"] = pd.to_numeric(work["necesidad_id"], errors="coerce").astype("Int64")
     work["categoria_clasificacion"] = work["necesidad_id"].map(category_by_id).fillna("")
 
+    # Vinculación con los mismos datos persistidos y editables desde Vista 3.1.
+    # Se leen de necesidades (no de necesidades_seguimiento) para evitar copias
+    # inconsistentes y conservar la edición bidireccional entre ambas vistas.
+    need_values = {}
+    for _, record in needs.iterrows():
+        raw_id = pd.to_numeric(record.get("id"), errors="coerce")
+        if pd.notna(raw_id):
+            need_values[int(raw_id)] = record
+    for field in NEED_EDIT_FIELDS:
+        lookup = {
+            nid: row.get(field) for nid, row in need_values.items()
+        }
+        work[field] = work["necesidad_id"].map(lookup)
+        if field in NEED_NUMERIC_FIELDS:
+            work[field] = pd.to_numeric(work[field], errors="coerce")
+        else:
+            work[field] = work[field].map(base._clean_text)
+
+    # Coordenadas WGS84 de la vista 3.2: cada par corresponde al mismo punto.
+    # Para varias ubicaciones se conservan en el mismo orden con separador ';'.
+    locations = base.read_optional_table("necesidades_ubicaciones")
+    points_by_need: dict[int, list[tuple[float, float]]] = {}
+    if not locations.empty and {"necesidad_id", "latitud", "longitud"}.issubset(locations.columns):
+        if "id" in locations.columns:
+            locations = locations.sort_values("id", kind="stable")
+        for _, point in locations.iterrows():
+            nid = pd.to_numeric(point.get("necesidad_id"), errors="coerce")
+            lat = pd.to_numeric(point.get("latitud"), errors="coerce")
+            lon = pd.to_numeric(point.get("longitud"), errors="coerce")
+            if pd.isna(nid) or pd.isna(lat) or pd.isna(lon):
+                continue
+            if not (8.0 <= float(lat) <= 12.0 and -86.5 <= float(lon) <= -82.0):
+                continue
+            pair = (round(float(lat), 7), round(float(lon), 7))
+            pairs = points_by_need.setdefault(int(nid), [])
+            if pair not in pairs:
+                pairs.append(pair)
+    work["latitud"] = work["necesidad_id"].map({
+        nid: "; ".join(f"{lat:.7f}" for lat, _ in points)
+        for nid, points in points_by_need.items()
+    }).fillna("")
+    work["longitud"] = work["necesidad_id"].map({
+        nid: "; ".join(f"{lon:.7f}" for _, lon in points)
+        for nid, points in points_by_need.items()
+    }).fillna("")
+
     # Comunidades es un campo de ingreso manual. Ignorar las ubicaciones y
     # descripciones inferidas por la versión base; una celda sin dato guardado
     # queda en blanco y puede editarse, incluso para borrar un valor anterior.
@@ -129,6 +193,44 @@ def _column_config() -> dict:
         "Comunidades", width="large",
         help="Ingreso manual de comunidades beneficiadas. Puede dejarse en blanco.",
     )
+    current_cost_values = base.read_table("necesidades").get("costo", pd.Series(dtype=object))
+    cost_options = list(dict.fromkeys([
+        *COSTO_NECESIDAD_OPTIONS,
+        *(base._clean_text(value) for value in current_cost_values
+          if base._clean_text(value)),
+    ]))
+    config.update({
+        "costo": st.column_config.SelectboxColumn(
+            NECESIDAD_LABELS["costo"], options=cost_options, required=False, width="large",
+        ),
+        "caudal_estimado_lps": st.column_config.NumberColumn(
+            NECESIDAD_LABELS["caudal_estimado_lps"], min_value=0.0, step=1.0, format="%.2f",
+        ),
+        "volumen_estimado_m3": st.column_config.NumberColumn(
+            NECESIDAD_LABELS["volumen_estimado_m3"], min_value=0.0, step=10.0, format="%.2f",
+        ),
+        "km_estimado": st.column_config.NumberColumn(
+            NECESIDAD_LABELS["km_estimado"], min_value=0.0, step=0.1, format="%.3f",
+        ),
+        "responsabilidad_atencion": st.column_config.SelectboxColumn(
+            "Clasificación de la atención",
+            options=list(dict.fromkeys([
+                *ATENCION_NECESIDAD_OPTIONS,
+                *(base._clean_text(value) for value in
+                  base.read_table("necesidades").get("responsabilidad_atencion", pd.Series(dtype=object))
+                  if base._clean_text(value)),
+            ])),
+            required=False, width="large",
+        ),
+        "latitud": st.column_config.TextColumn(
+            "Latitud (WGS84)", width="medium",
+            help="Coordenadas registradas en Vista 3.2. Si hay varios puntos se muestran separados por punto y coma; para editarlos use Vista 3.2.",
+        ),
+        "longitud": st.column_config.TextColumn(
+            "Longitud (WGS84)", width="medium",
+            help="Se corresponde en orden con cada latitud. La modificación de puntos se realiza en Vista 3.2.",
+        ),
+    })
     config.update(
         {
             "id_necesidad": st.column_config.NumberColumn(
@@ -177,6 +279,62 @@ def _changed_tracking_rows(edited: pd.DataFrame, original: pd.DataFrame) -> pd.D
             after[column] = after[column].map(base._clean_text)
     equal = before.eq(after).fillna(False) | (before.isna() & after.isna())
     return edited.loc[~equal.all(axis=1)].copy()
+
+
+def _changed_need_values(
+    edited: pd.DataFrame, original: pd.DataFrame,
+) -> dict[int, dict[str, object]]:
+    """Detectar exclusivamente ediciones de los 5 campos compartidos con 3.1."""
+    changes: dict[int, dict[str, object]] = {}
+    for nid, after in edited.iterrows():
+        before = original.loc[nid]
+        modified: dict[str, object] = {}
+        for field in NEED_EDIT_FIELDS:
+            old_value, new_value = before.get(field), after.get(field)
+            if field in NEED_NUMERIC_FIELDS:
+                old_num = pd.to_numeric(old_value, errors="coerce")
+                new_num = pd.to_numeric(new_value, errors="coerce")
+                if pd.isna(new_num) and base._clean_text(new_value):
+                    raise ValueError(f"ID {nid}: valor numérico inválido para {field}.")
+                if pd.notna(new_num) and (not pd.notna(new_num) or not float(new_num) >= 0 or not float(new_num) < float("inf")):
+                    raise ValueError(f"ID {nid}: {field} debe ser un número no negativo.")
+                equal = (pd.isna(old_num) and pd.isna(new_num)) or (
+                    pd.notna(old_num) and pd.notna(new_num)
+                    and float(old_num) == float(new_num)
+                )
+                if not equal:
+                    modified[field] = None if pd.isna(new_num) else float(new_num)
+            else:
+                old_text = base._clean_text(old_value)
+                new_text = base._clean_text(new_value)
+                if old_text != new_text:
+                    modified[field] = new_text
+        if modified:
+            changes[int(nid)] = modified
+    return changes
+
+
+def _save_need_changes(changes: dict[int, dict[str, object]]) -> None:
+    """Actualizar la tabla de necesidades sin borrar sus otras columnas.
+
+    Se vuelve a leer el registro completo. Esta estrategia también conserva
+    todas las columnas al guardar en CSV local, donde upsert_rows reemplaza filas.
+    """
+    if not changes:
+        return
+    latest = base.read_table("necesidades").copy()
+    if latest.empty or "id" not in latest.columns:
+        raise ValueError("No fue posible leer las necesidades actuales.")
+    numeric_ids = pd.to_numeric(latest["id"], errors="coerce")
+    wanted = set(changes)
+    if not wanted.issubset(set(numeric_ids.dropna().astype(int))):
+        raise ValueError("Algunas necesidades cambiaron o dejaron de existir; actualice los datos.")
+    rows = latest.loc[numeric_ids.isin(wanted)].copy()
+    for index, raw_id in numeric_ids.loc[rows.index].items():
+        nid = int(raw_id)
+        for field, value in changes[nid].items():
+            rows.at[index, field] = value
+    upsert_rows("necesidades", rows)
 
 
 def vista_seguimiento_necesidades() -> None:
@@ -357,7 +515,11 @@ def vista_seguimiento_necesidades() -> None:
         )
 
     st.markdown("##### Banco de Ideas de Proyectos AyA")
-    st.caption("🟦 Campos automáticos · Solo lectura     🟩 Campos editables · Ingreso o ajuste manual")
+    st.caption(
+        "🟦 Campos automáticos · Solo lectura     🟩 Campos editables · Ingreso o ajuste manual. "
+        "Las cinco columnas de costos, caudal, volumen, km y atención se sincronizan con Vista 3.1. "
+        "Las coordenadas se consultan aquí y se editan desde Vista 3.2 (una necesidad puede tener varios puntos)."
+    )
     editor = filtered[["necesidad_id", *DISPLAY_COLUMNS]].copy().set_index("necesidad_id")
 
     # El formulario agrupa las ediciones. Sin él, cada cambio de una celda
@@ -379,19 +541,45 @@ def vista_seguimiento_necesidades() -> None:
         )
 
     if save_requested:
-        changed = _changed_tracking_rows(edited, editor)
-        if changed.empty:
-            st.info("No hay cambios de seguimiento para guardar.")
-            return
         try:
-            base._save_tracking(changed)
-        except Exception as exc:
-            st.error(
-                "No fue posible guardar el seguimiento. "
-                "Verifique que `sql/09_formato_banco_ideas_seguimiento.sql` haya sido ejecutado. "
-                f"Detalle: {exc}"
-            )
-        else:
+            changed_tracking = _changed_tracking_rows(edited, editor)
+            changed_needs = _changed_need_values(edited, editor)
+        except (ValueError, TypeError) as exc:
+            st.error(f"No se guardaron cambios: {exc}")
+            return
+
+        if changed_tracking.empty and not changed_needs:
+            st.info("No hay cambios para guardar.")
+            return
+
+        saved: list[str] = []
+        errors: list[str] = []
+        if changed_needs:
+            try:
+                _save_need_changes(changed_needs)
+                saved.append("datos de necesidades (Vista 3.1)")
+            except Exception as exc:
+                errors.append(f"No se pudieron guardar los datos de necesidades: {exc}")
+        if not changed_tracking.empty:
+            try:
+                base._save_tracking(changed_tracking)
+                saved.append("datos de seguimiento (Vista 3.3)")
+            except Exception as exc:
+                errors.append(
+                    "No se pudieron guardar los datos de seguimiento. "
+                    "Verifique el esquema de necesidades_seguimiento (SQL 09). "
+                    f"Detalle: {exc}"
+                )
+
+        if saved:
             _prepare_work_cached.clear()
-            st.success("Seguimiento del Banco de Ideas guardado correctamente.")
+            st.success("Cambios guardados: " + " y ".join(saved) + ".")
+        if errors:
+            st.error(" ".join(errors))
+            if saved:
+                st.warning(
+                    "El guardado fue parcial. Los datos indicados como guardados "
+                    "ya están persistidos; revise los errores antes de reintentar."
+                )
+        else:
             st.rerun()

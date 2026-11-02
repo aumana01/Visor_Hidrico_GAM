@@ -547,7 +547,7 @@ def vista_seguimiento_necesidades() -> None:
 
     # El formulario agrupa las ediciones. Sin él, cada cambio de una celda
     # vuelve a ejecutar y renderizar toda la vista de más de treinta columnas.
-    with st.form("form_banco_ideas_aya_v5", border=False):
+    with st.form("form_banco_ideas_aya_v6", border=False):
         edited = st.data_editor(
             editor,
             use_container_width=True,
@@ -556,10 +556,10 @@ def vista_seguimiento_necesidades() -> None:
             num_rows="fixed",
             disabled=AUTOMATIC_COLUMNS,
             column_config=_column_config(),
-            key="editor_banco_ideas_aya_v5",
+            key="editor_banco_ideas_aya_v6",
         )
         save_requested = st.form_submit_button(
-            "Guardar cambios de seguimiento",
+            "Guardar cambios de necesidades y seguimiento",
             type="primary",
         )
 

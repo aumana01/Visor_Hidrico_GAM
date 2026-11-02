@@ -8,7 +8,7 @@ import streamlit as st
 import seguimiento_necesidades_v2 as base
 from ajustes_vistas_32_33 import STRICT_DISPLAY_COLUMNS
 from app_core import ATENCION_NECESIDAD_OPTIONS, COSTO_NECESIDAD_OPTIONS, NECESIDAD_LABELS
-from database import clear_cache, data_revision, upsert_rows
+from database import clear_cache, data_revision, get_supabase_client, upsert_rows
 
 
 # Orden de la Vista 3.3. Se conservan las 24 columnas institucionales y se
@@ -296,7 +296,7 @@ def _changed_need_values(
                 new_num = pd.to_numeric(new_value, errors="coerce")
                 if pd.isna(new_num) and base._clean_text(new_value):
                     raise ValueError(f"ID {nid}: valor numérico inválido para {field}.")
-                if pd.notna(new_num) and (not pd.notna(new_num) or not float(new_num) >= 0 or not float(new_num) < float("inf")):
+                if pd.notna(new_num) and not (0 <= float(new_num) < float("inf")):
                     raise ValueError(f"ID {nid}: {field} debe ser un número no negativo.")
                 equal = (pd.isna(old_num) and pd.isna(new_num)) or (
                     pd.notna(old_num) and pd.notna(new_num)
@@ -315,13 +315,36 @@ def _changed_need_values(
 
 
 def _save_need_changes(changes: dict[int, dict[str, object]]) -> None:
-    """Actualizar la tabla de necesidades sin borrar sus otras columnas.
+    """Persistir solo los campos realmente editados en 3.1 / 3.3.
 
-    Se vuelve a leer el registro completo. Esta estrategia también conserva
-    todas las columnas al guardar en CSV local, donde upsert_rows reemplaza filas.
+    En Supabase se hace PATCH por ID de necesidad, sin sobrescribir los demás
+    campos ni marcas de tiempo. En CSV local, donde el upsert reemplaza filas,
+    se combina con el registro completo antes de guardarlo.
     """
     if not changes:
         return
+
+    client = get_supabase_client()
+    if client is not None:
+        saved_ids: list[int] = []
+        try:
+            for nid, fields in changes.items():
+                client.table("necesidades").update(fields).eq("id", nid).execute()
+                saved_ids.append(nid)
+        except Exception as exc:
+            if saved_ids:
+                raise RuntimeError(
+                    f"Guardado parcial: se actualizaron las necesidades "
+                    f"{', '.join(map(str, saved_ids))} antes del error: {exc}"
+                ) from exc
+            raise
+        finally:
+            if saved_ids:
+                clear_cache()
+        return
+
+    # Entorno local: un upsert con columnas parciales eliminaría el resto de la
+    # fila CSV, por lo cual se integra el cambio en la fila completa vigente.
     latest = base.read_table("necesidades").copy()
     if latest.empty or "id" not in latest.columns:
         raise ValueError("No fue posible leer las necesidades actuales.")

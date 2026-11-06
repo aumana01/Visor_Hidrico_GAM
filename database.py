@@ -91,7 +91,11 @@ def _read_csv(table: str) -> pd.DataFrame:
     if not source.exists():
         return pd.DataFrame()
 
-    return pd.read_csv(source, dtype=str, keep_default_na=False)
+    try:
+        return pd.read_csv(source, dtype=str, keep_default_na=False)
+    except pd.errors.EmptyDataError:
+        # Un archivo local sin filas/encabezados no debe bloquear el alta.
+        return pd.DataFrame()
 
 
 def _coerce_known_types(table: str, df: pd.DataFrame) -> pd.DataFrame:
@@ -528,6 +532,10 @@ def replace_need_systems(
             else relation_rows
         )
 
+    if current.empty and len(current.columns) == 0:
+        current = pd.DataFrame(
+            columns=["id", "necesidad_id", "sistema_nombre", "sistema_codigo"]
+        )
     current.to_csv(
         _runtime_file("necesidades_sistemas"),
         index=False,

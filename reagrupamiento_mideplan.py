@@ -678,14 +678,16 @@ def _filter_projects(projects: pd.DataFrame) -> pd.DataFrame:
 def vista_reagrupamiento_mideplan() -> None:
     st.subheader("Vista 3.4 · Reagrupamiento Estratégico de Necesidades · MIDEPLAN")
     st.caption(
-        "Pre-formulación inteligente de posibles proyectos integrales a partir de la totalidad del Banco de Ideas de la Vista 3.3. "
-        "La agrupación conserva la trazabilidad de cada ID original."
+        "Se revisa la totalidad del Banco de Ideas de la Vista 3.3. Solo se agrupan como proyectos estratégicos "
+        "las necesidades que requieren apoyo de otras dependencias y licitación mayor, ambas registradas expresamente. "
+        "El resto conserva trazabilidad como operativo o pendiente de validación."
     )
 
     st.info(
-        "El motor de reagrupamiento es interno y explicable: combina sistema de abastecimiento, clasificación de 3.2, "
-        "componentes hidráulicos, relación territorial y similitud textual. No envía información a un modelo de IA externo. "
-        "El resultado es una propuesta de pre-formulación para revisión técnica; no sustituye un perfil, prefactibilidad o factibilidad formal."
+        "Los criterios de entrada se toman de los campos «Clasificación de la atención» y «Tipo de licitación» "
+        "de 3.3; el costo estimado no reemplaza al tipo de licitación declarado. "
+        "Las necesidades elegibles se organizan en familias temáticas sin alterar los datos originales. "
+        "Esta preformulación no sustituye los estudios formales ni la aprobación de los proyectos."
     )
 
     c1, c2 = st.columns([1.2, 3.8])
@@ -713,11 +715,21 @@ def vista_reagrupamiento_mideplan() -> None:
 
     filtered = _filter_projects(projects)
     m1, m2, m3, m4 = st.columns(4)
-    m1.metric("Necesidades originales", f"{len(trace) if isinstance(trace, pd.DataFrame) else 0:,}")
-    m2.metric("Proyectos estratégicos propuestos", f"{len(projects):,}")
-    reduction = (1 - len(projects) / max(1, len(trace))) * 100 if isinstance(trace, pd.DataFrame) and len(trace) else 0
-    m3.metric("Consolidación", f"{reduction:.1f}%", help="Reducción del número de registros al pasar de necesidades individuales a agrupaciones propuestas.")
-    m4.metric("Potencial alto / muy alto", f"{int(projects['potencial'].isin(['Alto', 'Muy alto']).sum()):,}")
+    total_needs = len(trace) if isinstance(trace, pd.DataFrame) else 0
+    eligible_needs = (
+        int(trace["ruta_modelo"].eq("Proyecto de inversion").sum())
+        if isinstance(trace, pd.DataFrame) and "ruta_modelo" in trace.columns else 0
+    )
+    active_projects = int(pd.to_numeric(projects["cantidad_necesidades"], errors="coerce").fillna(0).gt(0).sum())
+    pending_needs = (
+        int(trace["ruta_modelo"].eq("Pendiente de validacion").sum())
+        if isinstance(trace, pd.DataFrame) and "ruta_modelo" in trace.columns else 0
+    )
+    m1.metric("Necesidades revisadas", f"{total_needs:,}")
+    m2.metric("Elegibles para agrupamiento", f"{eligible_needs:,}")
+    m3.metric("Proyectos con necesidades elegibles", f"{active_projects:,}",
+              help="Se mantienen ocho familias PE-001 a PE-008; solo las que tienen necesidades elegibles generan fichas.")
+    m4.metric("Pendientes de validación", f"{pending_needs:,}")
 
     tab1, tab2, tab3 = st.tabs(["Proyectos estratégicos", "Trazabilidad de la Vista 3.3", "Criterios MIDEPLAN"])
 
@@ -756,10 +768,16 @@ def vista_reagrupamiento_mideplan() -> None:
     with tab2:
         if isinstance(trace, pd.DataFrame) and not trace.empty:
             project_ids = filtered["proyecto_id"].tolist()
-            trace_filtered = trace[trace["proyecto_estrategico"].isin(project_ids)].copy()
+            trace_filtered = trace[
+                trace["proyecto_estrategico"].isin(project_ids)
+                | trace["ruta_modelo"].ne("Proyecto de inversion")
+            ].copy()
+            st.caption("Se muestran los proyectos filtrados junto a las necesidades operativas y pendientes de validación, sin perder sus IDs.")
             display_cols = [
-                "proyecto_estrategico", "nombre_proyecto_estrategico", "id_necesidad", "categoria_clasificacion",
-                "codigo_interno", "idea_proyecto", "tipo_proyecto_banco", "codigo_nombre_sistema", "ubicacion_provincia",
+                "proyecto_estrategico", "nombre_proyecto_estrategico", "ruta_modelo", "id_necesidad",
+                "categoria_clasificacion", "responsabilidad_atencion", "tipo_licitacion",
+                "justificacion_modelo", "codigo_interno", "idea_proyecto", "tipo_proyecto_banco",
+                "codigo_nombre_sistema", "ubicacion_provincia",
                 "ubicacion_canton", "distritos", "comunidades", "poblacion_beneficiada", "estado_actual_aya",
                 "mandato_asociado", "propuesta_solucion", "estudios_terrenos", "proyecto_avance", "descripcion_avance",
                 "condicion_hidrica", "estado_sistema_bh", "caudal_estimado_lps", "volumen_estimado_m3", "km_estimado",
@@ -788,6 +806,8 @@ def vista_reagrupamiento_mideplan() -> None:
             - **Tamaño / dimensiones:** resume caudal, almacenamiento y longitud de red cuando la necesidad original contiene esas magnitudes.
             - **Preinversión:** propone un nivel orientativo de identificación/formulación y enumera información faltante para avanzar.
 
-            **Regla de agrupamiento:** una coincidencia temática por sí sola no es suficiente. Se exige una combinación fuerte de sistema, territorio, componente hidráulico y/o similitud textual. Las ideas duplicadas por sistema se consolidan automáticamente.
+            **Regla de ingreso a fichas:** únicamente «Requiere apoyo de otras dependencias» y «Licitación mayor» conjuntamente. «Lo puede atender GAM» más «Licitación menor» sigue una ruta operativa. Los demás casos quedan pendientes de validación, sin perderse del Banco de Ideas.
+
+            **Regla de agrupamiento:** tras superar el filtro de elegibilidad, las necesidades se organizan por familia de inversión; se conservan los ID de origen.
             """
         )

@@ -534,16 +534,23 @@ def replace_need_systems(
         encoding="utf-8-sig",
     )
 
-    legacy_row = pd.DataFrame(
-        [
-            {
-                "id": need_id,
-                "sistema_de_abastecimiento": "; ".join(names),
-                "codigo_de_sistema": "; ".join(
-                    code_by_name.get(name, "") for name in names
-                ),
-            }
+    # En modo CSV, upsert_rows reemplaza la fila por ID; enviar solo las
+    # columnas legacy borraría objetivo, costos y demás campos ya registrados.
+    # Se parte de la ficha completa y se modifican únicamente los dos campos.
+    current_needs = _coerce_known_types("necesidades", _read_csv("necesidades"))
+    matching = (
+        current_needs.loc[
+            pd.to_numeric(current_needs["id"], errors="coerce").eq(need_id)
         ]
+        if "id" in current_needs.columns
+        else pd.DataFrame()
+    )
+    if matching.empty:
+        raise ValueError(f"No se encontró la necesidad {need_id} para asociar sistemas.")
+    legacy_row = matching.iloc[[0]].copy()
+    legacy_row["sistema_de_abastecimiento"] = "; ".join(names)
+    legacy_row["codigo_de_sistema"] = "; ".join(
+        code_by_name.get(name, "") for name in names
     )
     upsert_rows("necesidades", legacy_row)
     clear_cache()

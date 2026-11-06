@@ -38,13 +38,16 @@ DISPLAY_COLUMNS[DISPLAY_COLUMNS.index("comunidades"):DISPLAY_COLUMNS.index("comu
     "latitud", "longitud",
 ]
 NEED_EDIT_FIELDS = (
-    "costo", "caudal_estimado_lps", "volumen_estimado_m3",
-    "km_estimado", "responsabilidad_atencion",
+    "categoria_clasificacion", "costo", "caudal_estimado_lps",
+    "volumen_estimado_m3", "km_estimado", "responsabilidad_atencion",
 )
+# La columna visible tiene el mismo significado que tipo_de_proyecto de la Vista 3.1.
+# Se persiste allí, nunca como una segunda categoría en necesidades_seguimiento.
+NEED_DB_FIELDS = {"categoria_clasificacion": "tipo_de_proyecto"}
 NEED_NUMERIC_FIELDS = ("caudal_estimado_lps", "volumen_estimado_m3", "km_estimado")
 
 AUTOMATIC_COLUMNS = [
-    "id_necesidad", "categoria_clasificacion", "idea_proyecto", "descripcion_idea",
+    "id_necesidad", "idea_proyecto", "descripcion_idea",
     "ubicacion_provincia", "ubicacion_canton", "distritos", "poblacion_beneficiada",
     "codigo_nombre_sistema", "servicios_atendidos", "condicion_hidrica", "estado_sistema_bh",
     "latitud", "longitud",
@@ -102,18 +105,8 @@ def _prepare_work_cached(revision: int) -> pd.DataFrame:
         return work
 
     needs = base.read_table("necesidades")
-    category_by_id: dict[int, str] = {}
-    if not needs.empty and "id" in needs.columns:
-        for _, row in needs.iterrows():
-            raw_id = pd.to_numeric(row.get("id"), errors="coerce")
-            if pd.isna(raw_id):
-                continue
-            nid = int(raw_id)
-            category_by_id[nid] = base._clean_text(row.get("tipo_de_proyecto"))
-
     work = work.copy()
     work["id_necesidad"] = pd.to_numeric(work["necesidad_id"], errors="coerce").astype("Int64")
-    work["categoria_clasificacion"] = work["necesidad_id"].map(category_by_id).fillna("")
 
     # Vinculación con los mismos datos persistidos y editables desde Vista 3.1.
     # Se leen de necesidades (no de necesidades_seguimiento) para evitar copias
@@ -124,8 +117,9 @@ def _prepare_work_cached(revision: int) -> pd.DataFrame:
         if pd.notna(raw_id):
             need_values[int(raw_id)] = record
     for field in NEED_EDIT_FIELDS:
+        source_field = NEED_DB_FIELDS.get(field, field)
         lookup = {
-            nid: row.get(field) for nid, row in need_values.items()
+            nid: row.get(source_field) for nid, row in need_values.items()
         }
         work[field] = work["necesidad_id"].map(lookup)
         if field in NEED_NUMERIC_FIELDS:
@@ -231,6 +225,17 @@ def _column_config() -> dict:
             help="Se corresponde en orden con cada latitud. La modificación de puntos se realiza en Vista 3.2.",
         ),
     })
+    catalogo = base.read_table("catalogo_tipos_proyecto")
+    necesidades = base.read_table("necesidades")
+    categorias_catalogo = (
+        catalogo.iloc[:, 0] if not catalogo.empty else pd.Series(dtype=object)
+    )
+    categorias_actuales = necesidades.get("tipo_de_proyecto", pd.Series(dtype=object))
+    category_options = list(dict.fromkeys([
+        "",
+        *(base._clean_text(v) for v in categorias_catalogo if base._clean_text(v)),
+        *(base._clean_text(v) for v in categorias_actuales if base._clean_text(v)),
+    ]))
     config.update(
         {
             "id_necesidad": st.column_config.NumberColumn(
@@ -238,10 +243,16 @@ def _column_config() -> dict:
                 format="%d",
                 width="small",
             ),
-            "categoria_clasificacion": st.column_config.TextColumn(
+            "categoria_clasificacion": st.column_config.SelectboxColumn(
                 "Categoría / clasificación",
+                options=category_options,
+                required=False,
                 width="large",
-                help="Clasificación de la necesidad utilizada en la Vista 3.2.",
+                help=(
+                    "Seleccione una categoría del catálogo institucional. "
+                    "El cambio actualiza Tipo de proyecto en la Vista 3.1 "
+                    "y los filtros de la Vista 3.2."
+                ),
             ),
         }
     )
@@ -284,7 +295,7 @@ def _changed_tracking_rows(edited: pd.DataFrame, original: pd.DataFrame) -> pd.D
 def _changed_need_values(
     edited: pd.DataFrame, original: pd.DataFrame,
 ) -> dict[int, dict[str, object]]:
-    """Detectar exclusivamente ediciones de los 5 campos compartidos con 3.1."""
+    """Detectar ediciones de categoría y demás campos compartidos con 3.1."""
     changes: dict[int, dict[str, object]] = {}
     for nid, after in edited.iterrows():
         before = original.loc[nid]
@@ -308,7 +319,7 @@ def _changed_need_values(
                 old_text = base._clean_text(old_value)
                 new_text = base._clean_text(new_value)
                 if old_text != new_text:
-                    modified[field] = new_text
+                    modified[NEED_DB_FIELDS.get(field, field)] = new_text
         if modified:
             changes[int(nid)] = modified
     return changes
@@ -540,7 +551,7 @@ def vista_seguimiento_necesidades() -> None:
     st.markdown("##### Banco de Ideas de Proyectos AyA")
     st.caption(
         "🟦 Campos automáticos · Solo lectura     🟩 Campos editables · Ingreso o ajuste manual. "
-        "Las cinco columnas de costos, caudal, volumen, km y atención se sincronizan con Vista 3.1. "
+        "Categoría / clasificación y los campos de costos, caudal, volumen, km y atención se sincronizan con Vista 3.1. "
         "Las coordenadas se consultan aquí y se editan desde Vista 3.2 (una necesidad puede tener varios puntos)."
     )
     editor = filtered[["necesidad_id", *DISPLAY_COLUMNS]].copy().set_index("necesidad_id")

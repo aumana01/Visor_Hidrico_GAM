@@ -371,6 +371,15 @@ def _save_need_changes(changes: dict[int, dict[str, object]]) -> None:
     upsert_rows("necesidades", rows)
 
 
+def _filter_attention(work: pd.DataFrame, selected: list[str]) -> pd.DataFrame:
+    """Filtra por clasificación de atención; «Sin clasificar» incluye valores vacíos."""
+    if not selected:
+        return work
+    expected = {"" if option == "Sin clasificar" else option for option in selected}
+    actual = work["responsabilidad_atencion"].map(base._clean_text)
+    return work.loc[actual.isin(expected)].copy()
+
+
 def vista_seguimiento_necesidades() -> None:
     st.subheader("Vista 3.3 · Banco de Ideas de Proyectos AyA")
     st.caption(
@@ -420,7 +429,24 @@ def vista_seguimiento_necesidades() -> None:
         key="banco_filter_state",
     )
 
-    f4, f5, f6 = st.columns([1.3, 2.0, 2.4])
+    f_atencion, f4, f5, f6 = st.columns([1.8, 1.3, 2.0, 2.4])
+    atenciones_registradas = {
+        base._clean_text(value)
+        for value in work["responsabilidad_atencion"]
+        if base._clean_text(value)
+    }
+    opciones_atencion = list(dict.fromkeys([
+        *[value for value in ATENCION_NECESIDAD_OPTIONS if value],
+        *sorted(atenciones_registradas),
+        "Sin clasificar",
+    ]))
+    selected_attention = f_atencion.multiselect(
+        "Clasificación de la atención",
+        opciones_atencion,
+        key="banco_filter_atencion",
+        placeholder="Todas",
+        help="Permite filtrar por una o varias clasificaciones. «Sin clasificar» incluye necesidades sin clasificación registrada.",
+    )
     provinces = sorted(
         {
             p.strip()
@@ -462,6 +488,7 @@ def vista_seguimiento_necesidades() -> None:
         filtered = filtered[
             filtered["categoria_clasificacion"].isin(selected_categories)
         ]
+    filtered = _filter_attention(filtered, selected_attention)
     if selected_licitaciones:
         selected = ["" if value == "Pendiente de definir" else value for value in selected_licitaciones]
         filtered = filtered[filtered["tipo_licitacion"].fillna("").isin(selected)]

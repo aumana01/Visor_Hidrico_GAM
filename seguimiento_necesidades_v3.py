@@ -8,6 +8,7 @@ import streamlit as st
 import seguimiento_necesidades_v2 as base
 from ajustes_vistas_32_33 import STRICT_DISPLAY_COLUMNS
 from app_core import ATENCION_NECESIDAD_OPTIONS, COSTO_NECESIDAD_OPTIONS, NECESIDAD_LABELS
+from clasificacion_atencion import normalizar_atencion
 from database import clear_cache, data_revision, get_supabase_client, upsert_rows
 
 
@@ -125,7 +126,9 @@ def _prepare_work_cached(revision: int) -> pd.DataFrame:
         if field in NEED_NUMERIC_FIELDS:
             work[field] = pd.to_numeric(work[field], errors="coerce")
         else:
-            work[field] = work[field].map(base._clean_text)
+            work[field] = work[field].map(
+                normalizar_atencion if field == "responsabilidad_atencion" else base._clean_text
+            )
 
     # Coordenadas WGS84 de la vista 3.2: cada par corresponde al mismo punto.
     # Para varias ubicaciones se conservan en el mismo orden con separador ';'.
@@ -208,13 +211,8 @@ def _column_config() -> dict:
         ),
         "responsabilidad_atencion": st.column_config.SelectboxColumn(
             "Clasificación de la atención",
-            options=list(dict.fromkeys([
-                *ATENCION_NECESIDAD_OPTIONS,
-                *(base._clean_text(value) for value in
-                  base.read_table("necesidades").get("responsabilidad_atencion", pd.Series(dtype=object))
-                  if base._clean_text(value)),
-            ])),
-            required=False, width="large",
+            options=ATENCION_NECESIDAD_OPTIONS,
+            required=True, width="large",
         ),
         "latitud": st.column_config.TextColumn(
             "Latitud (WGS84)", width="medium",
@@ -316,8 +314,9 @@ def _changed_need_values(
                 if not equal:
                     modified[field] = None if pd.isna(new_num) else float(new_num)
             else:
-                old_text = base._clean_text(old_value)
-                new_text = base._clean_text(new_value)
+                cleaner = normalizar_atencion if field == "responsabilidad_atencion" else base._clean_text
+                old_text = cleaner(old_value)
+                new_text = cleaner(new_value)
                 if old_text != new_text:
                     modified[NEED_DB_FIELDS.get(field, field)] = new_text
         if modified:
@@ -372,11 +371,11 @@ def _save_need_changes(changes: dict[int, dict[str, object]]) -> None:
 
 
 def _filter_attention(work: pd.DataFrame, selected: list[str]) -> pd.DataFrame:
-    """Filtra por clasificación de atención; «Sin clasificar» incluye valores vacíos."""
+    """Filtra las cuatro clasificaciones vigentes; también homologa datos históricos."""
     if not selected:
         return work
-    expected = {"" if option == "Sin clasificar" else option for option in selected}
-    actual = work["responsabilidad_atencion"].map(base._clean_text)
+    expected = {normalizar_atencion(option) for option in selected}
+    actual = work["responsabilidad_atencion"].map(normalizar_atencion)
     return work.loc[actual.isin(expected)].copy()
 
 
@@ -430,16 +429,7 @@ def vista_seguimiento_necesidades() -> None:
     )
 
     f_atencion, f4, f5, f6 = st.columns([1.8, 1.3, 2.0, 2.4])
-    atenciones_registradas = {
-        base._clean_text(value)
-        for value in work["responsabilidad_atencion"]
-        if base._clean_text(value)
-    }
-    opciones_atencion = list(dict.fromkeys([
-        *[value for value in ATENCION_NECESIDAD_OPTIONS if value],
-        *sorted(atenciones_registradas),
-        "Sin clasificar",
-    ]))
+    opciones_atencion = ATENCION_NECESIDAD_OPTIONS
     selected_attention = f_atencion.multiselect(
         "Clasificación de la atención",
         opciones_atencion,

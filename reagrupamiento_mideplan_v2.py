@@ -8,6 +8,7 @@ import pandas as pd
 import streamlit as st
 
 import reagrupamiento_mideplan as base
+from database import data_revision
 from criterios_reagrupamiento import (
     RUTA_ESTRATEGICA, RUTA_OPERATIVA, RUTA_REVISION,
     clasificar_ruta_estrategica,
@@ -504,6 +505,7 @@ def build_groups() -> tuple[pd.DataFrame, pd.DataFrame]:
     if work.empty:
         st.session_state["mideplan_operational"] = pd.DataFrame()
         st.session_state["mideplan_pending"] = pd.DataFrame()
+        st.session_state["mideplan_data_revision"] = data_revision()
         return pd.DataFrame(), pd.DataFrame()
 
     raw = base.seguimiento.base.read_table("necesidades")
@@ -628,6 +630,7 @@ def build_groups() -> tuple[pd.DataFrame, pd.DataFrame]:
         "estado_bh_critico", "potencial", "potencial_puntos", "nivel_preinversion_sugerido",
         "informacion_faltante", "servicio", "codigos_internos",
     ]
+    st.session_state["mideplan_data_revision"] = data_revision()
     return projects[front], traceability
 
 
@@ -674,9 +677,17 @@ def _filter_projects(projects: pd.DataFrame) -> pd.DataFrame:
 
 
 def _clear_stale_model() -> None:
-    if st.session_state.get("mideplan_model_version") == MODEL_VERSION:
+    # Evita exportar fichas basadas en clasificaciones ya modificadas desde 3.3.
+    up_to_date = (
+        st.session_state.get("mideplan_model_version") == MODEL_VERSION
+        and st.session_state.get("mideplan_data_revision") == data_revision()
+    )
+    if up_to_date:
         return
-    for key in ("mideplan_projects", "mideplan_trace", "mideplan_operational", "mideplan_pending"):
+    for key in (
+        "mideplan_projects", "mideplan_trace", "mideplan_operational",
+        "mideplan_pending", "mideplan_data_revision",
+    ):
         st.session_state.pop(key, None)
     st.session_state["mideplan_model_version"] = MODEL_VERSION
 

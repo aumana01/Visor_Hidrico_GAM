@@ -1335,8 +1335,9 @@ def _ensure_projects() -> tuple[pd.DataFrame, pd.DataFrame]:
 def vista_fichas_planificacion() -> None:
     st.subheader("Vista 3.5 · Confección de Fichas para Priorización")
     st.caption(
-        "Genera una ficha editable por cada proyecto de inversión de la Vista 3.4 para su presentación "
-        "ante la Dirección de Planificación y el Comité Director."
+        "Genera fichas editables únicamente para las familias estratégicas de la Vista 3.4 que "
+        "incluyan necesidades con apoyo de otras dependencias y licitación mayor declarada en 3.3, "
+        "para revisión de Planificación y el Comité Director."
     )
     st.info(
         "La Vista 3.5 utiliza la cartera temporal de la Vista 3.4. Los ajustes de la ficha se conservan "
@@ -1359,6 +1360,24 @@ def vista_fichas_planificacion() -> None:
             st.rerun()
         return
 
+    # 3.4 conserva las ocho familias programáticas, incluso vacías. Las fichas
+    # 3.5 solo corresponden a proyectos con al menos una necesidad elegible
+    # (apoyo de otras dependencias + licitación mayor explícita en 3.3).
+    projects = projects.loc[
+        pd.to_numeric(projects["cantidad_necesidades"], errors="coerce").fillna(0).gt(0)
+    ].copy()
+    if projects.empty:
+        st.warning(
+            "No hay necesidades que cumplan simultáneamente «Requiere apoyo de otras dependencias» "
+            "y «Licitación mayor». Las ocho familias se conservan en la Vista 3.4, "
+            "pero no corresponde generar fichas estratégicas vacías. "
+            "Revise los campos en la Vista 3.3 y vuelva a reagrupar."
+        )
+        return
+    st.caption(
+        f"Se habilitan {len(projects)} fichas con necesidades elegibles. Las iniciativas "
+        "operativas y pendientes de validación no se incluyen en estas fichas."
+    )
     project_options = {
         f"{row['proyecto_id']} · {row['nombre_proyecto']}": index
         for index, row in projects.iterrows()
@@ -1805,8 +1824,9 @@ def vista_fichas_planificacion() -> None:
 
     st.markdown("#### Exportación conjunta")
     st.caption(
-        "Genera en una sola descarga las fichas PE-001 a PE-008. Para cada proyecto se utilizan primero los ajustes "
-        "guardados durante la sesión; si una ficha aún no fue abierta, se calculan sus valores vigentes desde la Vista 3.4."
+        "Genera en una sola descarga exclusivamente las fichas con necesidades elegibles. "
+        "Para cada proyecto se utilizan primero los ajustes guardados durante la sesión; "
+        "si una ficha aún no fue abierta, se calculan sus valores vigentes desde la Vista 3.4."
     )
     batch_zip, batch_results = _batch_xls_zip(
         projects,
@@ -1824,7 +1844,7 @@ def vista_fichas_planificacion() -> None:
     st.download_button(
         "Descargar todas las fichas XLS (ZIP)",
         data=batch_zip,
-        file_name="Fichas_Planificacion_GAM_PE-001_a_PE-008.zip",
+        file_name="Fichas_Planificacion_GAM_Estrategicas_Elegibles.zip",
         mime="application/zip",
         type="primary",
         use_container_width=True,

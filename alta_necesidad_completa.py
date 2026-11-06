@@ -95,10 +95,6 @@ def _guardar_alta(
         raise ValueError("Uno o más sistemas seleccionados no tienen código asociado.")
     if not necesidad["objetivo_de_la_iniciativa"].strip():
         raise ValueError("El objetivo de la iniciativa es obligatorio.")
-    if seguimiento["mandato_asociado"] != "No" and seguimiento["fecha_recurso_amparo"] is None:
-        # Un mandato puede no tener una fecha de recurso; la fecha sigue siendo opcional.
-        pass
-
     _verificar_tablas_supabase()
     pending = st.session_state.get("alta_necesidad_pendiente")
     # Las ubicaciones ya guardadas no se insertan de nuevo al reintentar
@@ -199,7 +195,7 @@ def render_alta_necesidad(
             origen = _texto("Código o ID de origen", k("origen"))
             zona = _texto("Zona o sector", k("zona"))
             p1, p2, p3 = st.columns(3)
-            prioridad = _texto("Prioridad", k("prioridad")) if False else p1.text_input("Prioridad", key=k("prioridad")).strip()
+            prioridad = p1.text_input("Prioridad", key=k("prioridad")).strip()
             plazo = p2.text_input("Plazo", key=k("plazo")).strip()
             estado_general = p3.text_input("Estado general", key=k("estado_general")).strip()
 
@@ -337,7 +333,7 @@ def render_alta_necesidad(
             "activo": True,
         }
         new_id = _guardar_alta(necesidad, sistemas, seleccion, coords, seguimiento)
-    except (ValueError, RuntimeError, Exception) as exc:
+    except Exception as exc:
         st.error(f"No se pudo completar el alta: {exc}")
         return
 

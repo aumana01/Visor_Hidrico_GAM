@@ -18,6 +18,7 @@ from streamlit_autorefresh import st_autorefresh
 import streamlit.components.v1 as components
 from supabase import create_client
 
+from clasificacion_atencion import DOMINIO_ATENCION, normalizar_atencion
 from database import (
     delete_rows,
     is_supabase_enabled,
@@ -83,7 +84,7 @@ ESTADO_INICIATIVA_OPTIONS = [
     "Por definir",
 ]
 ESTUDIO_OPTIONS = ["Sí", "No", "En proceso", "Adquirido", "Adquiridos", "No aplica", "Por definir"]
-ATENCION_NECESIDAD_OPTIONS = ["", "Lo puede atender el GAM", "Se requiere apoyo de otras dependencias","Ambos"]
+ATENCION_NECESIDAD_OPTIONS = DOMINIO_ATENCION
 COSTO_NECESIDAD_OPTIONS = [
     "",
     "Entre ¢0.00 y ¢100,000.00",
@@ -834,6 +835,7 @@ def expand_needs_by_system(needs: pd.DataFrame, sistemas: pd.DataFrame) -> pd.Da
 
 def normalize_need_rows(df: pd.DataFrame, sistemas: pd.DataFrame) -> pd.DataFrame:
     out = ensure_columns(df, NECESIDAD_VISIBLE_COLS).copy()
+    out["responsabilidad_atencion"] = out["responsabilidad_atencion"].map(normalizar_atencion)
     _, _, by_code_name, _ = system_maps(sistemas)
 
     for idx, row in out.iterrows():
@@ -2137,7 +2139,7 @@ def vista_necesidades() -> None:
             .nunique(),
         )
         c3.metric("Tipos de proyecto", necesidades.get("tipo_de_proyecto", pd.Series(dtype=str)).nunique())
-        c4.metric("Sin clasificar", int(necesidades.get("responsabilidad_atencion", pd.Series(dtype=str)).astype(str).str.strip().eq("").sum()))
+        c4.metric("Sin clasificar", int(necesidades.get("responsabilidad_atencion", pd.Series(dtype=str)).map(normalizar_atencion).eq("Sin clasificar").sum()))
         st.markdown("#### Indicadores por sistema de abastecimiento")
         st.caption(
             "Los gráficos muestran únicamente valores mayores que cero. "

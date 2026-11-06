@@ -8,6 +8,10 @@ import pandas as pd
 import streamlit as st
 
 import reagrupamiento_mideplan as base
+from criterios_reagrupamiento import (
+    RUTA_ESTRATEGICA, RUTA_OPERATIVA, RUTA_REVISION,
+    clasificar_ruta_estrategica,
+)
 
 
 # Vista 3.4 - modelo compacto de cartera GAM.
@@ -17,7 +21,7 @@ import reagrupamiento_mideplan as base
 # transversales para toda la GAM, conserva cada ID de origen y separa las
 # atenciones que razonablemente pueden tramitarse con presupuesto operativo.
 
-MODEL_VERSION = "compacto-gam-2026.4"
+MODEL_VERSION = "compacto-gam-2026.5-atencion-licitacion"
 
 THRESHOLDS_2026 = {
     "Bienes y servicios": {
@@ -334,27 +338,18 @@ def _classify_need(row: pd.Series, raw: pd.Series) -> dict[str, object]:
     volume = float(volume_raw) if pd.notna(volume_raw) and float(volume_raw) > 0 else None
     lower, upper = _cost_bounds(raw.get("costo"))
     procurement = _procurement_label(lower, upper, rule.contract_nature)
-    major = procurement == "Licitacion mayor"
-
-    operational_reason = ""
-    if rule.key == "almacenamiento_gam" and volume is not None and volume < 500 and not major:
-        operational_reason = "Almacenamiento local menor de 500 m3; revisar atencion con presupuesto operativo."
-    elif _is_operational_category(category) and not major and not _has_explicit_investment_signal(rule, text, volume):
-        operational_reason = (
-            "Categoria susceptible de atencion operativa mediante licitacion menor o reducida; "
-            "no se incorpora automaticamente a un proyecto de inversion."
-        )
-
-    if major:
-        operational_reason = ""
+    # El estimado monetario se mantiene como referencia informativa, pero NO
+    # decide la ruta. Solo cuentan los dos dominios definidos en la Vista 3.3.
+    route, reason, attention, declared_licitacion = clasificar_ruta_estrategica(
+        row.get("responsabilidad_atencion"), row.get("tipo_licitacion")
+    )
 
     return {
         "rule": rule,
-        "route": "Atencion operativa" if operational_reason else "Proyecto de inversion",
-        "reason": operational_reason or (
-            "La necesidad requiere licitacion mayor y debe formularse como proyecto de inversion."
-            if major else rule.description
-        ),
+        "route": route,
+        "reason": reason,
+        "attention": attention,
+        "licitacion": declared_licitacion,
         "cost_lower": lower,
         "cost_upper": upper,
         "procurement": procurement,
@@ -408,11 +403,11 @@ def _build_project_row(
         "tipologia_mideplan": rule.process,
         "servicio": "Acueducto",
         "familia_estrategica": rule.family,
-        "criterio_agrupamiento": "Cartera tematica transversal GAM",
+        "criterio_agrupamiento": "Apoyo de otras dependencias + licitación mayor (Vista 3.3)",
         "categorias_agrupadas": categories or "Sin categoria registrada",
         "ruta_recomendada": "Proyecto de inversion",
         "naturaleza_contrato": rule.contract_nature,
-        "procedimiento_estimado_2026": procurement,
+        "procedimiento_estimado_2026": "Licitación mayor (registrada en 3.3)",
         "rango_costo_registrado": _format_cost_range(lower, upper),
         "umbral_2026": _threshold_text(rule.contract_nature),
         "ids_asociados": ", ".join(map(str, ids)),
@@ -464,7 +459,7 @@ def _build_empty_project_row(rule: PortfolioRule) -> dict[str, object]:
         "categorias_agrupadas": "Sin necesidades actuales asignadas",
         "ruta_recomendada": "Proyecto de inversion",
         "naturaleza_contrato": rule.contract_nature,
-        "procedimiento_estimado_2026": "Por determinar - sin necesidades actuales asignadas",
+        "procedimiento_estimado_2026": "Sin necesidades elegibles para la ficha",
         "rango_costo_registrado": "Sin estimacion suficiente",
         "umbral_2026": _threshold_text(rule.contract_nature),
         "ids_asociados": "",
@@ -528,6 +523,7 @@ def build_groups() -> tuple[pd.DataFrame, pd.DataFrame]:
     project_positions: dict[str, list[int]] = {rule.key: [] for rule in PORTFOLIO_RULES}
     classifications: dict[int, dict[str, object]] = {}
     operational_rows: list[dict[str, object]] = []
+    pending_rows: list[dict[str, object]] = []
 
     for position, row in work.iterrows():
         nid = int(row["necesidad_id"])
@@ -535,20 +531,26 @@ def build_groups() -> tuple[pd.DataFrame, pd.DataFrame]:
         result = _classify_need(row, raw_row)
         rule = result["rule"]
         classifications[nid] = result
-        if result["route"] == "Proyecto de inversion":
+        if result["route"] == RUTA_ESTRATEGICA:
             project_positions[rule.key].append(position)
         else:
-            operational_rows.append({
+            entry = {
                 "id_necesidad": nid,
                 "categoria": base._clean(row.get("categoria_clasificacion")) or "Sin categoria",
                 "necesidad": base._clean(row.get("idea_proyecto")),
                 "sistemas": base._clean(row.get("codigo_nombre_sistema")),
+                "clasificacion_atencion": result["attention"],
+                "tipo_licitacion": result["licitacion"],
                 "ruta_recomendada": result["route"],
                 "procedimiento_estimado_2026": result["procurement"],
                 "naturaleza_contrato": rule.contract_nature,
                 "costo_registrado": base._clean(raw_row.get("costo")) or "Sin dato",
                 "justificacion": result["reason"],
-            })
+            }
+            if result["route"] == RUTA_OPERATIVA:
+                operational_rows.append(entry)
+            else:
+                pending_rows.append(entry)
 
     rows: list[dict[str, object]] = []
     trace_parts: list[pd.DataFrame] = []
@@ -562,15 +564,19 @@ def build_groups() -> tuple[pd.DataFrame, pd.DataFrame]:
         trace = group.copy()
         trace.insert(0, "proyecto_estrategico", PROJECT_ID_BY_RULE[rule.key])
         trace.insert(1, "nombre_proyecto_estrategico", rule.name)
-        trace["ruta_modelo"] = "Proyecto de inversion"
+        trace["ruta_modelo"] = RUTA_ESTRATEGICA
         trace["familia_cartera"] = rule.family
+        trace["tipo_licitacion"] = [classifications[int(nid)]["licitacion"] for nid in trace["necesidad_id"]]
+        trace["responsabilidad_atencion"] = [classifications[int(nid)]["attention"] for nid in trace["necesidad_id"]]
         trace["procedimiento_estimado_2026"] = [classifications[int(nid)]["procurement"] for nid in trace["necesidad_id"]]
         trace["justificacion_modelo"] = [classifications[int(nid)]["reason"] for nid in trace["necesidad_id"]]
         trace_parts.append(trace)
 
     projects = pd.DataFrame(rows)
     operational = pd.DataFrame(operational_rows)
+    pending = pd.DataFrame(pending_rows)
     st.session_state["mideplan_operational"] = operational
+    st.session_state["mideplan_pending"] = pending
 
     if projects.empty:
         return projects, pd.DataFrame()
@@ -590,18 +596,25 @@ def build_groups() -> tuple[pd.DataFrame, pd.DataFrame]:
         names = dict(zip(projects["proyecto_id"], projects["nombre_proyecto"]))
         traceability["nombre_proyecto_estrategico"] = traceability["proyecto_estrategico"].map(names)
 
-    # Las atenciones operativas tambien forman parte de la trazabilidad total,
-    # pero no inflan el numero de proyectos propuestos.
-    if not operational.empty:
-        op_ids = set(operational["id_necesidad"].astype(int).tolist())
-        op_trace = work[work["necesidad_id"].astype(int).isin(op_ids)].copy()
-        op_trace.insert(0, "proyecto_estrategico", "OPERATIVO")
-        op_trace.insert(1, "nombre_proyecto_estrategico", "Atencion con presupuesto operativo")
-        op_trace["ruta_modelo"] = "Atencion operativa"
-        op_trace["familia_cartera"] = "Gestion operativa"
-        op_trace["procedimiento_estimado_2026"] = [classifications[int(nid)]["procurement"] for nid in op_trace["necesidad_id"]]
-        op_trace["justificacion_modelo"] = [classifications[int(nid)]["reason"] for nid in op_trace["necesidad_id"]]
-        traceability = pd.concat([traceability, op_trace], ignore_index=True)
+    # Trazabilidad íntegra: ningún ID se pierde por no ser elegible.
+    # Operativo y pendiente se muestran fuera de PE-001 a PE-008.
+    for route, table, identifier, label, family in (
+        (RUTA_OPERATIVA, operational, "OPERATIVO", "Atención operativa GAM", "Gestión operativa"),
+        (RUTA_REVISION, pending, "PENDIENTE", "Pendiente de validar criterios de ingreso", "Por definir"),
+    ):
+        if table.empty:
+            continue
+        ids = set(table["id_necesidad"].astype(int).tolist())
+        excluded_trace = work[work["necesidad_id"].astype(int).isin(ids)].copy()
+        excluded_trace.insert(0, "proyecto_estrategico", identifier)
+        excluded_trace.insert(1, "nombre_proyecto_estrategico", label)
+        excluded_trace["ruta_modelo"] = route
+        excluded_trace["familia_cartera"] = family
+        excluded_trace["responsabilidad_atencion"] = [classifications[int(nid)]["attention"] for nid in excluded_trace["necesidad_id"]]
+        excluded_trace["tipo_licitacion"] = [classifications[int(nid)]["licitacion"] for nid in excluded_trace["necesidad_id"]]
+        excluded_trace["procedimiento_estimado_2026"] = [classifications[int(nid)]["procurement"] for nid in excluded_trace["necesidad_id"]]
+        excluded_trace["justificacion_modelo"] = [classifications[int(nid)]["reason"] for nid in excluded_trace["necesidad_id"]]
+        traceability = pd.concat([traceability, excluded_trace], ignore_index=True)
 
     front = [
         "orden_estrategico", "proyecto_id", "nombre_proyecto", "familia_estrategica",
@@ -662,7 +675,7 @@ def _filter_projects(projects: pd.DataFrame) -> pd.DataFrame:
 def _clear_stale_model() -> None:
     if st.session_state.get("mideplan_model_version") == MODEL_VERSION:
         return
-    for key in ("mideplan_projects", "mideplan_trace", "mideplan_operational"):
+    for key in ("mideplan_projects", "mideplan_trace", "mideplan_operational", "mideplan_pending"):
         st.session_state.pop(key, None)
     st.session_state["mideplan_model_version"] = MODEL_VERSION
 
@@ -677,7 +690,8 @@ def vista_reagrupamiento_mideplan() -> None:
         "No se divide automaticamente por cluster o sistema. Las necesidades que correspondan a ampliacion, renovacion, "
         "sustitucion, mallado, sectorizacion, control de presiones, reduccion de perdidas, continuidad, resiliencia "
         "u optimizacion hidraulica de redes de distribucion se integran en PE-005. "
-        "Las atenciones estrictamente operativas pueden mantenerse fuera de la cartera cuando no contienen una inversion estrategica."
+        "Solo se integran necesidades clasificadas en 3.3 como «Requiere apoyo de otras dependencias» "
+        "y «Licitación mayor» al mismo tiempo; las demás conservan trazabilidad sin incorporarse a una ficha."
     )
     st.caption(
         "Reglas destacadas: el manejo de lodos, aguas residuales de proceso y recirculacion permanece integrado en PE-004 "
@@ -697,8 +711,9 @@ def vista_reagrupamiento_mideplan() -> None:
             hide_index=True,
         )
         st.caption(
-            "Los rangos de costo abiertos o insuficientes se marcan para validacion; no se presume un procedimiento "
-            "sin respaldo numerico. Toda necesidad que por su monto minimo alcance licitacion mayor se dirige a proyecto de inversion."
+            "Estos umbrales son únicamente referencias para contrastar estimaciones. "
+            "El ingreso a las fichas 3.5 se decide por los campos explícitos de atención "
+            "y tipo de licitación de la Vista 3.3, no por umbrales calculados."
         )
 
     base._original_view()
@@ -707,8 +722,8 @@ def vista_reagrupamiento_mideplan() -> None:
     if isinstance(operational, pd.DataFrame) and not operational.empty:
         st.markdown("### Necesidades orientadas a atencion operativa")
         st.caption(
-            "Estas necesidades permanecen trazables, pero no se cuentan como proyectos de inversion. "
-            "La ruta es orientativa y debe confirmarse cuando se disponga de una estimacion de costo definitiva."
+            "Cumplen ambos criterios operativos: «Lo puede atender GAM» y «Licitación menor». "
+            "Se excluyen de las fichas estratégicas, pero mantienen su ID y trazabilidad."
         )
         st.metric("Necesidades para presupuesto operativo", f"{len(operational):,}")
         st.dataframe(operational, use_container_width=True, hide_index=True, height=480)
@@ -718,6 +733,25 @@ def vista_reagrupamiento_mideplan() -> None:
             file_name="necesidades_atencion_operativa.csv",
             mime="text/csv",
         )
+
+
+    pending = st.session_state.get("mideplan_pending")
+    if isinstance(pending, pd.DataFrame) and not pending.empty:
+        st.markdown("### Necesidades pendientes de validación")
+        st.caption(
+            "No se incorporan todavía a los ocho proyectos ni generan fichas 3.5. "
+            "Complete o revise Clasificación de la atención y Tipo de licitación en la Vista 3.3; "
+            "luego recalcule el reagrupamiento. Incluye los casos «Ambos»."
+        )
+        st.metric("Necesidades por revisar", f"{len(pending):,}")
+        st.dataframe(pending, use_container_width=True, hide_index=True, height=480)
+        st.download_button(
+            "Descargar necesidades pendientes de validación (CSV)",
+            data=pending.to_csv(index=False).encode("utf-8-sig"),
+            file_name="necesidades_pendientes_criterios_estrategicos.csv",
+            mime="text/csv",
+        )
+
 
 
 # Se conservan los componentes visuales y de trazabilidad de la Vista 3.4 base,

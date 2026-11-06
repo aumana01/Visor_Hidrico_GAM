@@ -182,7 +182,9 @@ def render_alta_necesidad(
         c1, c2 = st.columns(2)
         costo = c1.selectbox("Estimación de costos", COSTO_NECESIDAD_OPTIONS, key=k("costo"))
         responsabilidad = c2.selectbox(
-            "Clasificación de atención", ATENCION_NECESIDAD_OPTIONS, key=k("atencion")
+            "Clasificación de atención", ATENCION_NECESIDAD_OPTIONS,
+            index=ATENCION_NECESIDAD_OPTIONS.index("Sin clasificar"),
+            key=k("atencion")
         )
         reto = _texto("Principal reto por superar", k("reto"), multiline=True)
         observacion = _texto("Observación general", k("observacion"), multiline=True)

@@ -11,6 +11,8 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
+from clasificacion_atencion import normalizar_atencion
+
 try:
     from supabase import Client, create_client
 except Exception:  # pragma: no cover - Supabase is optional for local demo mode.
@@ -103,6 +105,8 @@ def _coerce_known_types(table: str, df: pd.DataFrame) -> pd.DataFrame:
         return df
 
     out = df.copy()
+    if table == "necesidades" and "responsabilidad_atencion" in out.columns:
+        out["responsabilidad_atencion"] = out["responsabilidad_atencion"].map(normalizar_atencion)
 
     numeric_cols = {
         "id",
@@ -344,6 +348,8 @@ def upsert_rows(table: str, df: pd.DataFrame) -> pd.DataFrame:
         return df.copy()
 
     df = df.copy()
+    if table == "necesidades" and "responsabilidad_atencion" in df.columns:
+        df["responsabilidad_atencion"] = df["responsabilidad_atencion"].map(normalizar_atencion)
     client = get_supabase_client()
 
     if client is not None:

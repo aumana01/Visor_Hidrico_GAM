@@ -2329,84 +2329,10 @@ def vista_necesidades() -> None:
         st.download_button("Exportar necesidades filtradas a CSV", export_df.to_csv(index=False).encode("utf-8-sig"), "necesidades_filtradas.csv", "text/csv")
 
     with tab_nueva:
-        with st.form("form_necesidad", clear_on_submit=True):
-            objetivo = st.text_area("Objetivo de la iniciativa")
-            descripcion = st.text_area("Breve descripción")
-            col1, col2 = st.columns([1, 2])
-            tipo = col1.selectbox("Tipo de proyecto", tipo_options) if tipo_options else col1.text_input("Tipo de proyecto")
-            selected_need_systems = col2.multiselect(
-                "Sistemas de abastecimiento asociados",
-                options=sistema_options,
-                help="Puede seleccionar uno o varios sistemas; sus códigos se asignarán automáticamente.",
-            )
-            selected_need_codes = system_codes_for_names(selected_need_systems, sistemas)
-            st.caption(
-                "Códigos que se asignarán automáticamente: "
-                + ("; ".join(selected_need_codes) if selected_need_codes else "ninguno")
-            )
-            form_cost, form_attention = st.columns(2)
-            costo = form_cost.selectbox(
-                "Estimación de costos de la posible alternativa de solución",
-                COSTO_NECESIDAD_OPTIONS[1:],
-                help="Rango estimado de costos según la idea de solución.",
-            )
-            responsabilidad = form_attention.selectbox(
-                "Clasificación de atención",
-                ATENCION_NECESIDAD_OPTIONS[1:],
-            )
-            reto = st.text_area("Principal reto por superar")
-            observacion = st.text_area("Observación")
-            q1, q2, q3 = st.columns(3)
-            caudal_estimado = q1.number_input("Caudal estimado que aporta la iniciativa (L/s)", min_value=0.0, value=0.0, step=1.0)
-            volumen_estimado = q2.number_input("Volumen estimado que aporta la iniciativa (m³)", min_value=0.0, value=0.0, step=10.0)
-            km_estimado = q3.number_input("Km estimados que aporta la iniciativa (km)", min_value=0.0, value=0.0, step=0.1)
-            submitted = st.form_submit_button("Agregar necesidad", type="primary")
-            if submitted:
-                new_row = pd.DataFrame(
-                    [
-                        {
-                            "objetivo_de_la_iniciativa": objetivo,
-                            "breve_descripcion": descripcion,
-                            "tipo_de_proyecto": tipo,
-                            "codigo_de_sistema": "; ".join(selected_need_codes),
-                            "sistema_de_abastecimiento": "; ".join(selected_need_systems),
-                            "sistemas_asociados": selected_need_systems,
-                            "codigos_asociados": "; ".join(selected_need_codes),
-                            "costo": costo,
-                            "principal_reto_por_superar": reto,
-                            "observacion": observacion,
-                            "caudal_estimado_lps": caudal_estimado,
-                            "volumen_estimado_m3": volumen_estimado,
-                            "km_estimado": km_estimado,
-                            "responsabilidad_atencion": responsabilidad,
-                            "activo": True,
-                        }
-                    ]
-                )
-                new_row = normalize_need_rows(new_row, sistemas)
-                saved_need = upsert_rows(
-                    "necesidades",
-                    new_row.drop(
-                        columns=["sistemas_asociados", "codigos_asociados"],
-                        errors="ignore",
-                    ),
-                )
-                new_need_id = int(saved_need.iloc[0]["id"])
-                try:
-                    replace_need_systems(
-                        new_need_id,
-                        selected_need_systems,
-                        sistemas,
-                    )
-                except (RuntimeError, ValueError) as exc:
-                    st.error(
-                        "La necesidad fue creada, pero no se pudieron guardar sus "
-                        f"sistemas asociados. {exc}"
-                    )
-                else:
-                    st.success("Necesidad agregada con sus sistemas asociados.")
-                    st.rerun()
+        # Alta unificada: conserva los editores existentes de 3.1, 3.2 y 3.3.
+        from alta_necesidad_completa import render_alta_necesidad
 
+        render_alta_necesidad(tipo_options, sistema_options, sistemas)
 
 
 def vista_seguimiento_necesidades() -> None:

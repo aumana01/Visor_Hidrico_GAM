@@ -2095,7 +2095,20 @@ def vista_necesidades() -> None:
     tipos = read_table("catalogo_tipos_proyecto")
     sistemas = read_table("sistemas_clusters")
     if necesidades.empty:
-        st.warning("No hay necesidades cargadas.")
+        st.info("Todavía no hay necesidades registradas. Puede crear la primera desde el formulario integral.")
+        tipos = read_table("catalogo_tipos_proyecto")
+        sistemas = read_table("sistemas_clusters")
+        tipo_options = clean_options(
+            tipos.iloc[:, 0] if not tipos.empty else pd.Series(dtype=str),
+            include_blank=False,
+        )
+        sistema_options = clean_options(
+            sistemas.get("sistema_nombre", pd.Series(dtype=str)),
+            include_blank=False,
+        )
+        from alta_necesidad_completa import render_alta_necesidad
+
+        render_alta_necesidad(tipo_options, sistema_options, sistemas)
         return
 
     necesidades = ensure_columns(necesidades, ["id", *NECESIDAD_VISIBLE_COLS, "activo"])

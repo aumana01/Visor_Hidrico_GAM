@@ -32,11 +32,11 @@ class FiltroAtencionTests(unittest.TestCase):
         self.assertEqual(len(_filter_attention(self.needs, [])), 5)
 
     def test_filtra_por_una_clasificacion(self):
-        result = _filter_attention(self.needs, ["Lo puede atender el GAM"])
+        result = _filter_attention(self.needs, ["Lo puede atender GAM"])
         self.assertEqual(result["id_necesidad"].tolist(), [1])
 
     def test_seleccion_multiple_es_inclusiva(self):
-        result = _filter_attention(self.needs, ["Ambos", "Lo puede atender el GAM"])
+        result = _filter_attention(self.needs, ["Ambos", "Lo puede atender GAM"])
         self.assertEqual(result["id_necesidad"].tolist(), [1, 3])
 
     def test_sin_clasificar_incluye_nulos_y_blancos(self):

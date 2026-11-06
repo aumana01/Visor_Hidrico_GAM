@@ -455,7 +455,7 @@ def _build_empty_project_row(rule: PortfolioRule) -> dict[str, object]:
         "tipologia_mideplan": rule.process,
         "servicio": "Acueducto",
         "familia_estrategica": rule.family,
-        "criterio_agrupamiento": "Cartera tematica transversal GAM",
+        "criterio_agrupamiento": "Apoyo de otras dependencias + licitación mayor (Vista 3.3)",
         "categorias_agrupadas": "Sin necesidades actuales asignadas",
         "ruta_recomendada": "Proyecto de inversion",
         "naturaleza_contrato": rule.contract_nature,
@@ -503,6 +503,7 @@ def build_groups() -> tuple[pd.DataFrame, pd.DataFrame]:
     work = base.seguimiento._prepare_work()
     if work.empty:
         st.session_state["mideplan_operational"] = pd.DataFrame()
+        st.session_state["mideplan_pending"] = pd.DataFrame()
         return pd.DataFrame(), pd.DataFrame()
 
     raw = base.seguimiento.base.read_table("necesidades")
@@ -636,7 +637,7 @@ def _project_column_config() -> dict:
         "familia_estrategica": st.column_config.TextColumn("Cartera tematica GAM", width="large"),
         "ruta_recomendada": st.column_config.TextColumn("Ruta recomendada", width="medium"),
         "naturaleza_contrato": st.column_config.TextColumn("Naturaleza contractual", width="medium"),
-        "procedimiento_estimado_2026": st.column_config.TextColumn("Procedimiento estimado 2026", width="large"),
+        "procedimiento_estimado_2026": st.column_config.TextColumn("Licitación registrada en 3.3 / elegibilidad", width="large"),
         "rango_costo_registrado": st.column_config.TextColumn("Rango agregado registrado", width="medium"),
         "umbral_2026": st.column_config.TextColumn("Umbral AyA 2026 aplicado", width="large"),
         "categorias_agrupadas": st.column_config.TextColumn("Categorias de origen", width="large"),
